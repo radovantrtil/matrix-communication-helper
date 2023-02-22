@@ -1,0 +1,31 @@
+{
+  "name": "bp_xtrtil",
+  "version": "1.0.0",
+  "description": "Secure communication between services",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/radovantrtil/bp.git"
+  },
+  "keywords": [
+    "matrix",
+    "npm",
+    "package",
+    "secure",
+    "communication"
+  ],
+  "author": "Radovan Trtil",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/radovantrtil/bp/issues"
+  },
+  "homepage": "https://github.com/radovantrtil/bp#readme",
+  "dependencies": {
+    "express": "^4.18.2",
+    "matrix-js-sdk": "^23.3.0",
+    "olm": "^0.0.0"
+  }
+}
