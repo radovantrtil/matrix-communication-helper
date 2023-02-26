@@ -1,10 +1,12 @@
 const sdk = require("matrix-js-sdk");
 
+
 const xtrtilId= "@xtrtil1:matrix.org";
 const myUserID = "@radovantrtil1:matrix.org";
 const myAccessToekn = "syt_cmFkb3ZhbnRydGlsMQ_nlgCLnwPbVhxcBOaTOln_0yS1SC"
 
 const testRoomID = "!KQANJEAzaiMyqMFVlA:matrix.org";
+
 
 const client = sdk.createClient({
     baseUrl: "https://matrix.org",

@@ -8,7 +8,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/radovantrtil/bp.git"
+    "url": "git+https://github.com/radovantrtil/bp_xtrtil"
   },
   "keywords": [
     "matrix",
@@ -20,12 +20,11 @@
   "author": "Radovan Trtil",
   "license": "ISC",
   "bugs": {
-    "url": "https://github.com/radovantrtil/bp/issues"
+    "url": "https://github.com/radovantrtil/bp_xtrtil/issues"
   },
-  "homepage": "https://github.com/radovantrtil/bp#readme",
+  "homepage": "https://github.com/radovantrtil/bp_xtrtil#readme",
   "dependencies": {
-    "express": "^4.18.2",
-    "matrix-js-sdk": "^23.3.0",
-    "olm": "^0.0.0"
+    "@matrix-org/olm": "^3.2.14",
+    "matrix-js-sdk": "^23.3.0"
   }
 }

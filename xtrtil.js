@@ -1,5 +1,5 @@
 const sdk = require("matrix-js-sdk");
-const olm = require('olm');
+const olm = require('@matrix-org/olm');
 
 
 const myUserId = "@xtrtil1:matrix.org";
@@ -27,7 +27,7 @@ const matrixClient = sdk.createClient({
 
 // Get the encryption keys for the room
 const room = matrixClient.getRoom(roomId);
-const encryptionKeys = room.getEncryptionTargetMembers().map((member) => member.userId);
+const encryptionKeys = room.getEncryptionpmnTargetMembers().map((member) => member.userId);
 
 // Encrypt the message using Olm
 const ciphertext = matrixClient.crypto.encryptMessage(encryptionKeys, {
