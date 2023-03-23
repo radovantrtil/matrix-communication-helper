@@ -43,8 +43,6 @@ async function runMatrixClient() {
         }
     });
 
-    client.setDeviceDetails()
-
     client.on('Room.timeline', async (event, room, toStartOfTimeline) => {
         if (toStartOfTimeline) {
             return; // don't print paginated results
@@ -114,7 +112,7 @@ async function sendEncryptedMessage(message, roomId) {
         type: "m.room.encrypted",
         content: {
             msgtype: "m.text",
-            body: "Tady je text"
+            body: message
         }
     };
     const cipherText = olmDevice.encryptGroupMessage(sessionId, text);
