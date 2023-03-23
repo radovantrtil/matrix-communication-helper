@@ -24,7 +24,8 @@
   },
   "homepage": "https://github.com/radovantrtil/bp_xtrtil#readme",
   "dependencies": {
-    "@matrix-org/olm": "^3.2.14",
-    "matrix-js-sdk": "^23.3.0"
+    "@matrix-org/olm": "3.2.14",
+    "matrix-js-sdk": "^23.5.0",
+    "node-localstorage": "^2.2.1"
   }
 }
