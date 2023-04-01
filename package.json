@@ -15,7 +15,8 @@
     "npm",
     "package",
     "secure",
-    "communication"
+    "communication",
+    "e2e encryption"
   ],
   "author": "Radovan Trtil",
   "license": "ISC",
@@ -24,8 +25,7 @@
   },
   "homepage": "https://github.com/radovantrtil/bp_xtrtil#readme",
   "dependencies": {
-    "@matrix-org/olm": "3.2.14",
-    "matrix-js-sdk": "^23.5.0",
-    "node-localstorage": "^2.2.1"
+    "@matrix-org/olm": "https://gitlab.matrix.org/api/v4/projects/27/packages/npm/@matrix-org/olm/-/@matrix-org/olm-3.2.14.tgz",
+    "matrix-js-sdk": "^23.5.0"
   }
 }

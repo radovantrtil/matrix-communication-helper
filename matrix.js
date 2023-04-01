@@ -1,17 +1,21 @@
 const Matrix = require('matrix-js-sdk');
 
+
+
 async function getCredentialsWithPassword(username, password) {
-    const _credentials = await Matrix.createClient({baseUrl: "https://matrix.org"}).loginWithPassword(
+    const credentials = await Matrix.createClient({baseUrl: "https://matrix.org"}).loginWithPassword(
         username,
         password
     );
     return {
-        accessToken: _credentials.access_token,
-        userId: _credentials.user_id,
-        deviceId: _credentials.device_id,
+        accessToken: credentials.access_token,
+        userId: credentials.user_id,
+        deviceId: credentials.device_id,
     };
 }
 
+
+
 module.exports = {
-    getCredentialsWithPassword,
+    getCredentialsWithPassword
 }
