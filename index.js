@@ -9,44 +9,46 @@ let client;
 let memoryStore = new sdk.MemoryStore();
 let cryptoStore = new sdk.MemoryCryptoStore();
 
+
+
 async function runClient(filePath, credentials={}) {
-    if (!filePath && !(credentials.username && credentials.password && credentials.homeserverUrl)) {
-        throw new Error('Must provide either a file path or a username and password');
+    // Check if file path or object is missing
+    if (!filePath && !credentials) {
+        throw new Error('Error: must provide either a file path or a object with username, password and homeserverUrl');
     }
+
     //init olm library
     await olm.init({locateFile: () => "node_modules/@matrix-org/olm/olm.wasm"});
 
-    let jsonData, username, password, homeserverUrl;
-    if(filePath && !credentials){
-        try {
-            const data = fs.readFileSync(filePath, 'utf8');
-            jsonData = JSON.parse(data);
-            if (!jsonData.hasOwnProperty('homeserverUrl') || !jsonData.hasOwnProperty('username') || !jsonData.hasOwnProperty('password')) {
-               console.error('The file is missing one or more properties');
-               return null;
-            }
-            const { username: usernameFromFile, password: passwordFromFile, homeserverUrl: homeserverUrlFromFile} = jsonData;
+    let data;
 
-            username = usernameFromFile;
-            password = passwordFromFile;
-            homeserverUrl= homeserverUrlFromFile;
-        } catch (err) {
-            console.error(err);
-            return null;
+    try {
+        // Load file data
+        let fileData;
+        if (filePath) {
+            const fileContent = fs.readFileSync(filePath, 'utf8');
+            fileData = JSON.parse(fileContent);
         }
-    } else{
-        if (!credentials.hasOwnProperty('homeserverUrl') || !credentials.hasOwnProperty('username') || !credentials.hasOwnProperty('password')) {
-            throw new Error('The object is missing one or more properties');
+
+        // Check for required properties
+        const fileProperties = fileData ? ['homeserverUrl', 'username', 'password'] : [];
+        const objectProperties = ['homeserverUrl', 'username', 'password'];
+        const properties = [...fileProperties, ...objectProperties];
+        const missingProperties = properties.filter(prop => !fileData?.[prop] && !credentials?.[prop]);
+
+        if (missingProperties.length > 0) {
+            throw new Error(`Error: missing properties, needed properties: ${missingProperties.join(', ')}`);
         }
-        const { username: usernameOverride, password: passwordOverride, homeserverUrl: homeserverOverride} = credentials;
-        username = usernameOverride;
-        password = passwordOverride;
-        homeserverUrl= homeserverOverride;
+
+        // Use the data from the object or the file, depending on which has all the required properties
+        data = credentials && (!fileData || missingProperties.some(prop => credentials.hasOwnProperty(prop))) ? credentials : fileData;
+    } catch (err) {
+        console.error(err.message);
     }
 
-    const { accessToken, userId, deviceId } = await getCredentialsWithPassword(username,password);
+    const { accessToken, userId, deviceId } = await getCredentialsWithPassword(data.username,data.password);
     client = sdk.createClient({
-        baseUrl: homeserverUrl,
+        baseUrl: data.homeserverUrl,
         accessToken: accessToken,
         userId: userId,
         deviceId: deviceId,
@@ -210,7 +212,7 @@ async function createRoom(roomName){
     });
 }
 
-//method returning array of room IDS
+//method returning array of rooms ID, where is client joined
 async function getJoinedRoomsID(){
     const response = await client.getJoinedRooms();
     return response.joined_rooms;
@@ -220,11 +222,15 @@ module.exports = {
     runClient, inviteUser, createRoom, sendEncryptedMessage, sendMessage, getMessage, getJoinedRoomsID
 }
 
-
+const udaje = {
+    homeserverUrl: "https://matrix.org",
+    username: "",
+    password: ""
+}
 
 //TESTING 😂💥
 const filePath= "./config.json";
-runClient(filePath,null)
+runClient(filePath,udaje)
     .then((a) =>{
         sendMessage("hello", "!pScOYJKexjtjIPBGAI:matrix.org",
         )
