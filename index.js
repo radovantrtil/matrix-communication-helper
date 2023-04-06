@@ -13,75 +13,71 @@ let cryptoStore = new sdk.MemoryCryptoStore();
 /**
  * This method runs matrix client. Use object or file to give this method credentials.
  * @param filePath - path to file that contains the user's login credentials (username, password, and homeserverUrl)
- * @param credentials - object with the user's login credentials (username, password, and homeserverUrl)
+ * @param credentials - object with the user's login credentials (username, password and homeserverUrl)
  */
 async function runClient(filePath, credentials={}) {
-    // Check if file path or object is missing
     if (!filePath && !credentials) {
         throw new Error('Error: must provide either a file path or a object with username, password and homeserverUrl');
     }
 
-    //init olm library
     await olm.init({locateFile: () => "node_modules/@matrix-org/olm/olm.wasm"});
 
     let data;
+    // Load file data
+    let fileData;
+    if (filePath) {
+        const fileContent = fs.readFileSync(filePath, 'utf8');
+        fileData = JSON.parse(fileContent);
+    }
+
+    // Check for required properties
+    const fileProperties = fileData ? ['homeserverUrl', 'username', 'password'] : [];
+    const objectProperties = ['homeserverUrl', 'username', 'password'];
+    const properties = [...fileProperties, ...objectProperties];
+    const missingProperties = properties.filter(prop => !fileData?.[prop] && !credentials?.[prop]);
+
+    if (missingProperties.length > 0) {
+        throw new Error(`Error: missing properties, needed properties: ${missingProperties.join(', ')}`);
+    }
+
+    // Check if file or object has required properties and use one that does
+    data = credentials && (!fileData || missingProperties.some(prop => credentials.hasOwnProperty(prop))) ? credentials : fileData;
 
     try {
-        // Load file data
-        let fileData;
-        if (filePath) {
-            const fileContent = fs.readFileSync(filePath, 'utf8');
-            fileData = JSON.parse(fileContent);
+        const { accessToken, userId, deviceId } = await getCredentialsWithPassword(data.username,data.password, data.homeserverUrl);
+        client = sdk.createClient({
+            baseUrl: data.homeserverUrl,
+            accessToken: accessToken,
+            userId: userId,
+            deviceId: deviceId,
+            store: memoryStore,
+            cryptoStore: cryptoStore
+        });
+
+        await client.initCrypto();
+
+        if(client.isCryptoEnabled()){
+            console.log("STARTING client, crypto enabled");
+            await client.startClient({ initialSyncLimit: 1 });
         }
+        await client.exportDevice();
 
-        // Check for required properties
-        const fileProperties = fileData ? ['homeserverUrl', 'username', 'password'] : [];
-        const objectProperties = ['homeserverUrl', 'username', 'password'];
-        const properties = [...fileProperties, ...objectProperties];
-        const missingProperties = properties.filter(prop => !fileData?.[prop] && !credentials?.[prop]);
+        client.on('sync', async function (state) {
+            if (state === 'PREPARED') {
+                client.exportRoomKeys();
+            }
+        });
 
-        if (missingProperties.length > 0) {
-            throw new Error(`Error: missing properties, needed properties: ${missingProperties.join(', ')}`);
-        }
-
-        // Check if file or object has required properties and use one that does
-        data = credentials && (!fileData || missingProperties.some(prop => credentials.hasOwnProperty(prop))) ? credentials : fileData;
-    } catch (err) {
+        client.on("RoomMember.membership", function(event, member) {
+            if (member.membership === "invite" && member.userId === client.getUserId()) {
+                client.joinRoom(member.roomId).then(function() {
+                    console.log("Auto-joined %s", member.roomId);
+                });
+            }
+        });
+    }catch (err) {
         console.error(err.message);
     }
-
-    const { accessToken, userId, deviceId } = await getCredentialsWithPassword(data.username,data.password);
-    client = sdk.createClient({
-        baseUrl: data.homeserverUrl,
-        accessToken: accessToken,
-        userId: userId,
-        deviceId: deviceId,
-        store: memoryStore,
-        cryptoStore: cryptoStore
-    });
-
-    await client.initCrypto();
-
-    if(client.isCryptoEnabled()){
-        console.log("STARTING client, crypto enabled");
-        await client.startClient({ initialSyncLimit: 1 });
-    }
-    await client.exportDevice();
-
-    client.on('sync', async function (state, prevState, res) {
-        if (state === 'PREPARED') {
-            console.log("STATE: ", state);
-            client.exportRoomKeys();
-        }
-    });
-
-    client.on("RoomMember.membership", function(event, member) {
-        if (member.membership === "invite" && member.userId === client.getUserId()) {
-            client.joinRoom(member.roomId).then(function() {
-                console.log("Auto-joined %s", member.roomId);
-            });
-        }
-    });
 }
 
 async function sendMessage(message, roomId) {
@@ -89,7 +85,7 @@ async function sendMessage(message, roomId) {
         body: JSON.stringify(message),
         msgtype: "m.text",
     };
-    client.sendEvent(roomId, "m.room.message", content, "", (err, res) => {
+    client.sendEvent(roomId, "m.room.message", content, "", (err) => {
         console.log(err);
     });
 }
@@ -118,7 +114,7 @@ function getMessage() {
  * @param onMessageCallback
  */
 
-function messageListener(onMessageCallback) {
+function messageListener(onMessageCallback, roomId) {
     client.on("Room.timeline", function (event, room, toStartOfTimeline) {
         if (toStartOfTimeline) {
             return; // don't print paginated results
@@ -126,7 +122,8 @@ function messageListener(onMessageCallback) {
         if (event.getType() !== "m.room.message") {
             return; // only print messages
         }
-         const message = event.getContent().body;
+        if(roomId !== room.roomId) return;
+        const message = event.getContent().body;
         onMessageCallback(message);
     });
 }
@@ -136,7 +133,7 @@ function messageListener(onMessageCallback) {
  * @param message - message which will be encrypted and sent
  * @param roomId - ID of the room, where message is sent
  */
-// send encrypted message to user
+
 async function sendEncryptedMessage(message, roomId) {
 
     const olmDevice = new OlmDevice();
@@ -187,6 +184,7 @@ async function sendEncryptedMessage(message, roomId) {
 
 /**
  *  First check if client has permission to invite other users. If client has permission than user is invited to the room.
+ * @param roomId - ID of room
  * @param userId - ID of user, who will be invited
  */
 async function inviteUser(roomId, userId){
@@ -252,40 +250,39 @@ async function createRoom(roomName){
  * @return - return array of rooms ID
  */
 async function getJoinedRoomsID(){
+    if (!client) {
+        throw new Error("Client is not initialized.");
+    }
     const response = await client.getJoinedRooms();
     return response.joined_rooms;
 }
 
-module.exports = {
-    runClient, inviteUser, createRoom, sendEncryptedMessage, sendMessage, getMessage, getJoinedRoomsID, messageListener
+/**
+ * Getting client object
+ * @return - returns client object
+ */
+function getClient() {
+    return client;
 }
+
+/**
+ * Setting client object - prob for mocking purpose only
+ * @param newClient - set client object
+ */
+// Add this function to your matrix module
+function setClient(newClient) {
+    client = newClient;
+}
+
+
+module.exports = {
+    runClient, inviteUser, createRoom, sendEncryptedMessage, sendMessage, getMessage, getJoinedRoomsID, messageListener, getClient, setClient, getMyPowerLevel
+}
+
 
 const loginCred = {
     homeserverUrl: "https://matrix.org",
     username: "",
     password: ""
 }
-
-//TESTING 😂💥
-const filePath= "./config.json";
-runClient(filePath,loginCred)
-    .then((a) =>{
-        sendMessage("hello", "!pScOYJKexjtjIPBGAI:matrix.org",
-        )
-            .then((a) =>{
-                messageListener(message => {
-                    console.log("Received message: ", message);
-                    inviteUser("!pScOYJKexjtjIPBGAI:matrix.org", "@xtrtil:matrix.org");
-                });
-                getMessage().then((mess) => {
-                    getJoinedRoomsID().then(r => {
-                        for(const room of r){
-                            console.log("Room: ", room)
-                        }
-                    });
-                });
-            })
-            .catch((error) => console.error(error));
-    })
-    .catch((error) => console.error(error));
 
