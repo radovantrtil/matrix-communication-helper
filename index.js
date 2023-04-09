@@ -1,14 +1,37 @@
 const sdk = require("matrix-js-sdk");
 const olm = require("@matrix-org/olm");
-const { getCredentialsWithPassword } = require('./matrix');
-const {OlmDevice} = require("matrix-js-sdk/lib/crypto/OlmDevice");
 const fs = require('fs');
-
 global.Olm = olm;
 
 let client;
 let memoryStore = new sdk.MemoryStore();
 let cryptoStore = new sdk.MemoryCryptoStore();
+
+async function getCredentialsWithPassword(username, password, homeserver) {
+    try{
+        const credentials = await sdk.createClient({baseUrl: homeserver}).loginWithPassword(
+            username,
+            password
+        );
+        return {
+            success: true,
+            message: "User logged in successfully.",
+            accessToken: credentials.access_token,
+            userId: credentials.user_id,
+            deviceId: credentials.device_id,
+        };
+    }catch (error){
+        console.error("Error logging in with password:", error);
+        return {
+            success: false,
+            message: "User login failed.",
+            accessToken: null,
+            userId: null,
+            deviceId: null,
+
+        };
+    }
+}
 
 /**
  * This method runs matrix client. Use object or file to give this method credentials.
@@ -71,7 +94,6 @@ async function runClient(filePath, credentials={}) {
         client.setGlobalErrorOnUnknownDevices(false);
 
         if(client.isCryptoEnabled()){
-            console.log("STARTING client, crypto enabled");
             await client.startClient({ initialSyncLimit: 1 });
         }
 
@@ -100,14 +122,14 @@ async function runClient(filePath, credentials={}) {
     }
 }
 /**
- * Method to send and encrypt given message to the room.
+ * Method to send encrypted message to the room.
  * @param roomId - ID of the room, where message is sent
  * @param message - message which will be encrypted and sent
  */
 
 async function sendEncryptedMessage(roomId, message) {
     try {
-        await isUserJoinedInRoom(roomId);
+        isUserJoinedInRoom(roomId);
 
         await client.setRoomEncryption(roomId, {
             algorithm: "m.megolm.v1.aes-sha2",
@@ -123,6 +145,12 @@ async function sendEncryptedMessage(roomId, message) {
     }
 }
 
+/**
+ * Method to send given message to the room. Message will NOT be encrypted.
+ * @param roomId - ID of the room, where message is sent
+ * @param message - message
+ */
+
 async function sendMessage(message, roomId) {
     const content = {
         body: JSON.stringify(message),
@@ -133,17 +161,17 @@ async function sendMessage(message, roomId) {
     });
 }
 /**
- * Waiting for message to come... TODO return encrypted messages instead....
+ * Waiting for NOT encrypted message to come
  * @return - whenever message comes, getMessage returns it
  */
 function getMessage() {
     return new Promise((resolve) => {
         client.on("Room.timeline", function (event, room, toStartOfTimeline) {
             if (toStartOfTimeline) {
-                return; // don't print paginated results
+                return;
             }
             if (event.getType() !== "m.room.message") {
-                return; // only print messages
+                return;
             }
             const mess = event.getContent().body;
             resolve(mess);
@@ -152,47 +180,52 @@ function getMessage() {
 }
 
 /**
-* Waiting for encrypted message to come TODO
+* Waiting for encrypted message to come TODO not working 😢
 * @param roomId - The room ID where the encrypted message is expected
 * @return - Whenever an encrypted message comes, getMessage decrypts and returns it
 */
 function getMessageEncrypted(roomId) {
     return new Promise(async (resolve, reject) => {
 
-        const isJoined = await isUserJoinedInRoom(roomId);
+        const isJoined =  isUserJoinedInRoom(roomId);
         if (!isJoined) {
             reject("Client is not a member of the room");
             console.log("Client is not a member of the room");
             return;
         }
-        // Enable room encryption
+
         await client.setRoomEncryption(roomId, {
             algorithm: "m.megolm.v1.aes-sha2",
         });
+
         if(client.isRoomEncrypted(roomId)){
             console.log("ROOM IS ENCRYPTED");
             client.on("Event.decrypted", (event) => {
-                if (event.getType() === "m.room.encrypted" && event.isDecryptionFailure()) {
-                    throw new Error("Failed to decrypt message: ", event);
-                } else if (event.getType() === "m.room.message") {
-                    const content = event.getContent().body;
-                    resolve(content);
+                if (event.getRoomId() === roomId) {
+                    if (event.getType() === "m.room.encrypted" && event.isDecryptionFailure()) {
+                        reject("Failed to decrypt message: "+ event);
+                    } else if (event.getType() === "m.room.message") {
+                        const content = event.getContent().body;
+                        resolve(content);
+                    }
                 }
             });
+            client.on("Event.decryption_failure", (event, err) => {
+                console.error("Error decrypting event: ", err);
+                reject(err);
+            });
         }else{
-            console.log("ERROR, NOT ENCRYPTED");
+            reject("Room is NOT encrypted "+ roomId);
         }
-
-
-
-        client.on("Event.decryption_failure", (event, err) => {
-            console.error("Error decrypting event: ", err);
-            reject(err);
-        });
     });
 }
 
-async function isUserJoinedInRoom(roomId) {
+/**
+ * Checks if current client is joined in given room
+ * @param roomId - id of room where should listener listen for events
+ * @return boolean
+ */
+function isUserJoinedInRoom(roomId) {
     if (!client) {
         throw new Error("Client is not initialized.");
     }
@@ -226,31 +259,30 @@ function messageListener(onMessageCallback, roomId) {
 }
 
 /**
- * Message listener for rooms that are end-to-end encrypted TODO listen only for room with the given roomId
- * @param onMessageCallback - gives decrypte message
+ * Message listener for messages that are end-to-end encrypted
+ * @param onMessageCallback - gives decrypt message
  * @param roomId - id of room where should listener listen for encrypted events
  */
 function messageListenerEncrypted(onMessageCallback, roomId) {
 
-    isUserJoinedInRoom(roomId).then(() => {
-        client.setRoomEncryption(roomId, {
-            algorithm: "m.megolm.v1.aes-sha2",
-        }).then(()=>{
-            client.on("Event.decrypted", (event) => {
-                if (event.getRoomId() === roomId) {
-                    if (event.getType() === "m.room.encrypted" && event.isDecryptionFailure()) {
-                        throw new Error("Failed to decrypt message: ", event);
-                    } else if (event.getType() === "m.room.message") {
-                        const content = event.getContent();
-                        onMessageCallback(content.body);
-                    }
+    if(!isUserJoinedInRoom(roomId)){
+        throw new Error("Error while checking user's room join status");
+    }
+    client.setRoomEncryption(roomId, {
+        algorithm: "m.megolm.v1.aes-sha2",
+    }).then(()=>{
+        client.on("Event.decrypted", (event) => {
+            if (event.getRoomId() === roomId) {
+                if (event.getType() === "m.room.encrypted" && event.isDecryptionFailure()) {
+                    throw new Error("Failed to decrypt message: ", event);
+                } else if (event.getType() === "m.room.message") {
+                    const content = event.getContent();
+                    onMessageCallback(content.body);
                 }
-            });
-        }).catch(er => {
-            console.error("Error while setting room encryption:", er);
+            }
         });
     }).catch(er => {
-        console.error("Error while checking user's room join status:", er);
+        console.error("Error while setting room encryption:", er);
     });
 }
 
@@ -258,14 +290,24 @@ function messageListenerEncrypted(onMessageCallback, roomId) {
  *  First check if client has permission to invite other users. If client has permission than user is invited to the room.
  * @param roomId - ID of room
  * @param userId - ID of user, who will be invited
- */
+ * @returns {Promise<{success: boolean, message: string}>}
+ * */
 async function inviteUser(roomId, userId){
-    const powerLevels = await client.getStateEvent(roomId, "m.room.power_levels", "");
-    const myPowerLevel = await getMyPowerLevel(roomId);
-    if(powerLevels.invite > myPowerLevel){
-        throw new Error("Error: You dont have permission to invite users");
+    try {
+        const powerLevels = await client.getStateEvent(roomId, "m.room.power_levels", "");
+        const myPowerLevel = await getMyPowerLevel(roomId);
+        const invitePowerLevel = powerLevels.invite || 50; // Default value for invite permission is 50
+
+        if (invitePowerLevel > myPowerLevel) {
+            console.error("Error: You don't have permission to invite users");
+        }
+
+        await client.invite(roomId, userId);
+        return { success: true, message: "User invited successfully." };
+    } catch (error) {
+        console.error("Error inviting user:", error);
+        return { success: false, message: "User invitation failed." };
     }
-    await client.invite(roomId, userId);
 }
 
 
@@ -289,31 +331,36 @@ async function getMyPowerLevel(roomId){
 /**
  * Create own private, end-to-end encrypted room (algorithm m.megolm.v1.aes-sha2)
  * @param roomName - choose name for new room
+ * @return {Promise<{success: boolean, message: string, room_id: string || null }>}
  */
 async function createRoom(roomName){
-    await client.createRoom({
-        name: roomName,
-        preset:"private_chat",
-        visibility:"private",
-        initial_state:
-            [
+    try {
+        const response = await client.createRoom({
+            name: roomName,
+            preset: "private_chat",
+            visibility: "private",
+            initial_state: [
                 {
-                    type:"m.room.guest_access",
-                    state_key:"",
-                    content:{
-                        guest_access:"can_join"
+                    type: "m.room.guest_access",
+                    state_key: "",
+                    content: {
+                        guest_access: "can_join"
                     }
                 },
                 {
-                    type:"m.room.encryption",
-                    state_key:"",
-                    content:
-                        {
-                            algorithm:"m.megolm.v1.aes-sha2"
-                        }
+                    type: "m.room.encryption",
+                    state_key: "",
+                    content: {
+                        algorithm: "m.megolm.v1.aes-sha2"
+                    }
                 }
             ]
-    });
+        });
+        return { success: true, message: "Room created successfully.", room_id: response.room_id, };
+    } catch (error) {
+        console.error("Error creating room:", error);
+        return { success: false, message: "Room creation failed.", room_id: null };
+    }
 }
 
 
@@ -341,7 +388,6 @@ function getClient() {
  * Setting client object - prob for mocking purpose only
  * @param newClient - set client object
  */
-// Add this function to your matrix module
 function setClient(newClient) {
     client = newClient;
 }
@@ -349,8 +395,11 @@ function setClient(newClient) {
 
 module.exports = {
     runClient, inviteUser, createRoom, sendEncryptedMessage, sendMessage,
-    getMessage, getJoinedRoomsID, messageListener, messageListenerEncrypted, getClient, setClient, getMyPowerLevel
+    getMessage, getJoinedRoomsID, messageListener, messageListenerEncrypted,
+    getClient, setClient, getMyPowerLevel
 }
+
+
 
 const loginCred = {
     homeserverUrl: "https://matrix.org",
@@ -371,7 +420,11 @@ runClient(null, loginCred).then(()=>{
     sendEncryptedMessage(roomId,mess).then(r => {console.log(r)}).catch(er =>{console.log(er)});
 
 
-    messageListenerEncrypted((message) => {
-        console.log('Received message:', message);
-    }, roomId);
+    getMessageEncrypted(roomId)
+        .then((message) => {
+            console.log("Received message:", message);
+        })
+        .catch((error) => {
+            console.error("Error while waiting for message:", error);
+        });
 });
