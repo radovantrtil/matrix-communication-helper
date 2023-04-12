@@ -21,10 +21,9 @@ async function getCredentialsWithPassword(username, password, homeserver) {
             deviceId: credentials.device_id,
         };
     }catch (error){
-        console.error("Error logging in with password:", error);
         return {
             success: false,
-            message: "User login failed.",
+            message: `User login failed. ${error.message}`,
             accessToken: null,
             userId: null,
             deviceId: null,
@@ -46,14 +45,12 @@ async function runClient(filePath, credentials={}) {
     await olm.init({locateFile: () => "node_modules/@matrix-org/olm/olm.wasm"});
 
     let data;
-    // Load file data
     let fileData;
     if (filePath) {
         const fileContent = fs.readFileSync(filePath, 'utf8');
         fileData = JSON.parse(fileContent);
     }
 
-    // Check for required properties
     const fileProperties = fileData ? ['homeserverUrl', 'username', 'password'] : [];
     const objectProperties = ['homeserverUrl', 'username', 'password'];
     const properties = [...fileProperties, ...objectProperties];
@@ -63,7 +60,6 @@ async function runClient(filePath, credentials={}) {
         throw new Error(`Error: missing properties, needed properties: ${missingProperties.join(', ')}`);
     }
 
-    // Check if file or object has required properties and use one that does
     data = credentials && (!fileData || missingProperties.some(prop => credentials.hasOwnProperty(prop))) ? credentials : fileData;
 
     try {
@@ -74,10 +70,7 @@ async function runClient(filePath, credentials={}) {
             userId: userId,
             deviceId: deviceId,
             store: memoryStore,
-            cryptoStore: cryptoStore,
-            cryptoInfo: {
-                'ignore_unknown_devices': true
-            }
+            cryptoStore: cryptoStore
         });
         await client.initCrypto();
 
@@ -100,7 +93,6 @@ async function runClient(filePath, credentials={}) {
         if (!client.getCrossSigningId()) {
             await client.bootstrapCrossSigning({
                 authUploadDeviceSigningKeys: async function () {
-                    // Implement a secure method to get the user's password or interactive authentication
                     const response = await client.login("m.login.password", {
                         identifier: {
                             type: "m.id.user",
@@ -118,19 +110,20 @@ async function runClient(filePath, credentials={}) {
             });
         }
     }catch (err) {
-        console.error(err.message);
+        throw new Error("Error while setting up client: ", err.message);
     }
 }
 /**
  * Method to send encrypted message to the room.
  * @param roomId - ID of the room, where message is sent
  * @param message - message which will be encrypted and sent
+ * @returns {Promise<{success: boolean, message: string}>}
  */
-
 async function sendEncryptedMessage(roomId, message) {
     try {
-        isUserJoinedInRoom(roomId);
-
+        if(!this.currentClientJoinedInRoom(roomId)){
+            return { success: false, message: `Client is not member of the room ${roomId}`};
+        }
         await client.setRoomEncryption(roomId, {
             algorithm: "m.megolm.v1.aes-sha2",
         });
@@ -139,9 +132,9 @@ async function sendEncryptedMessage(roomId, message) {
             "body": JSON.stringify(message),
             "msgtype": "m.text"
         });
-        console.log("Encrypted message sent successfully.");
+        return { success: true, message: "Encrypted message sent successfully." };
     } catch (error) {
-        console.error("Error sending encrypted message:", error);
+        return { success: false, message: `Error sending encrypted message: ${error.message}` };
     }
 }
 
@@ -157,7 +150,7 @@ async function sendMessage(message, roomId) {
         msgtype: "m.text",
     };
     client.sendEvent(roomId, "m.room.message", content, "", (err) => {
-        console.log(err);
+        throw new Error('Error while sending message: ', err)
     });
 }
 /**
@@ -187,10 +180,9 @@ function getMessage() {
 function getMessageEncrypted(roomId) {
     return new Promise(async (resolve, reject) => {
 
-        const isJoined =  isUserJoinedInRoom(roomId);
+        const isJoined =  currentClientJoinedInRoom(roomId);
         if (!isJoined) {
             reject("Client is not a member of the room");
-            console.log("Client is not a member of the room");
             return;
         }
 
@@ -199,7 +191,6 @@ function getMessageEncrypted(roomId) {
         });
 
         if(client.isRoomEncrypted(roomId)){
-            console.log("ROOM IS ENCRYPTED");
             client.on("Event.decrypted", (event) => {
                 if (event.getRoomId() === roomId) {
                     if (event.getType() === "m.room.encrypted" && event.isDecryptionFailure()) {
@@ -211,7 +202,6 @@ function getMessageEncrypted(roomId) {
                 }
             });
             client.on("Event.decryption_failure", (event, err) => {
-                console.error("Error decrypting event: ", err);
                 reject(err);
             });
         }else{
@@ -225,10 +215,7 @@ function getMessageEncrypted(roomId) {
  * @param roomId - id of room where should listener listen for events
  * @return boolean
  */
-function isUserJoinedInRoom(roomId) {
-    if (!client) {
-        throw new Error("Client is not initialized.");
-    }
+function currentClientJoinedInRoom(roomId) {
     const room = client.getRoom(roomId);
     if (!room) {
         return false;
@@ -243,15 +230,19 @@ function isUserJoinedInRoom(roomId) {
  * @param roomId - id of room where should listener listen for events
  */
 function messageListener(onMessageCallback, roomId) {
+    if(!currentClientJoinedInRoom(roomId)){
+        throw new Error("Error while checking user's room join status");
+    }
+
     client.on("Room.timeline", function (event, room, toStartOfTimeline) {
+        if (event.getRoomId() !== roomId) {
+            return;
+        }
         if (toStartOfTimeline) {
             return; // don't print paginated results
         }
         if (event.getType() !== "m.room.message") {
             return; // only print messages
-        }
-        if(roomId !== room.roomId){
-            throw new Error("Error: wrong room");
         }
         const message = event.getContent().body;
         onMessageCallback(message);
@@ -265,24 +256,26 @@ function messageListener(onMessageCallback, roomId) {
  */
 function messageListenerEncrypted(onMessageCallback, roomId) {
 
-    if(!isUserJoinedInRoom(roomId)){
+    if(!currentClientJoinedInRoom(roomId)){
         throw new Error("Error while checking user's room join status");
     }
     client.setRoomEncryption(roomId, {
         algorithm: "m.megolm.v1.aes-sha2",
     }).then(()=>{
         client.on("Event.decrypted", (event) => {
-            if (event.getRoomId() === roomId) {
+            if (event.getRoomId() !== roomId) {
+                return;
+            }
                 if (event.getType() === "m.room.encrypted" && event.isDecryptionFailure()) {
-                    throw new Error("Failed to decrypt message: ", event);
+                    throw new Error("Failed to decrypt message");
                 } else if (event.getType() === "m.room.message") {
                     const content = event.getContent();
                     onMessageCallback(content.body);
                 }
-            }
+
         });
     }).catch(er => {
-        console.error("Error while setting room encryption:", er);
+        throw new Error("Error while listening for encrypted messages: ", er);
     });
 }
 
@@ -299,14 +292,13 @@ async function inviteUser(roomId, userId){
         const invitePowerLevel = powerLevels.invite || 50; // Default value for invite permission is 50
 
         if (invitePowerLevel > myPowerLevel) {
-            console.error("Error: You don't have permission to invite users");
+            return { success: false, message: "You don't have permission to invite users" };
         }
 
         await client.invite(roomId, userId);
         return { success: true, message: "User invited successfully." };
     } catch (error) {
-        console.error("Error inviting user:", error);
-        return { success: false, message: "User invitation failed." };
+        return { success: false, message: `User invitation failed. ${error.message}`};
     }
 }
 
@@ -358,8 +350,7 @@ async function createRoom(roomName){
         });
         return { success: true, message: "Room created successfully.", room_id: response.room_id, };
     } catch (error) {
-        console.error("Error creating room:", error);
-        return { success: false, message: "Room creation failed.", room_id: null };
+        return { success: false, message: `Room creation failed. ${error.message} `, room_id: null };
     }
 }
 
@@ -369,11 +360,12 @@ async function createRoom(roomName){
  * @return - return array of rooms ID
  */
 async function getJoinedRoomsID(){
-    if (!client) {
-        throw new Error("Client is not initialized.");
+    try{
+        const response = await client.getJoinedRooms();
+        return response.joined_rooms;
+    }catch (error){
+        throw new Error("Error while trying to get rooms ID: ", error.message);
     }
-    const response = await client.getJoinedRooms();
-    return response.joined_rooms;
 }
 
 /**
@@ -385,46 +377,15 @@ function getClient() {
 }
 
 /**
- * Setting client object - prob for mocking purpose only
+ * Setting client object - prob for testing purpose only
  * @param newClient - set client object
  */
 function setClient(newClient) {
     client = newClient;
 }
 
-
 module.exports = {
     runClient, inviteUser, createRoom, sendEncryptedMessage, sendMessage,
     getMessage, getJoinedRoomsID, messageListener, messageListenerEncrypted,
-    getClient, setClient, getMyPowerLevel
+    getClient, setClient, getMyPowerLevel, currentClientJoinedInRoom
 }
-
-
-
-const loginCred = {
-    homeserverUrl: "https://matrix.org",
-    username: "radovantrtil1",
-    password: "PEFStudent2023"
-}
-
-runClient(null, loginCred).then(()=>{
-
-    const roomId = "!FDIfCEjMcxQdaVoAUf:matrix.org";
-    const mess = {
-        "albumId": 1,
-        "id": 2,
-        "title": "reprehenderit est deserunt velit ipsam",
-        "url": "https://via.placeholder.com/600/771796",
-        "thumbnailUrl": "https://via.placeholder.com/150/771796"
-    };
-    sendEncryptedMessage(roomId,mess).then(r => {console.log(r)}).catch(er =>{console.log(er)});
-
-
-    getMessageEncrypted(roomId)
-        .then((message) => {
-            console.log("Received message:", message);
-        })
-        .catch((error) => {
-            console.error("Error while waiting for message:", error);
-        });
-});
