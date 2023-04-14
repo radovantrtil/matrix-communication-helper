@@ -422,27 +422,3 @@ module.exports = {
     getMessage, getJoinedRoomsID, messageListener, messageListenerEncrypted,
     getClient, setClient, getMyPowerLevel, currentClientJoinedInRoom
 }
-
-
-const loginCred = {
-    homeserverUrl: "https://matrix.org",
-    username: "radovantrtil3",
-    password: "PEFStudent2023"
-}
-
-runClient(null, loginCred).then(()=>{
-
-    const roomId = "!zXdOakElqNrvaviTIN:matrix.org";
-    const mess = {
-        "albumId": 1,
-        "id": 2,
-        "title": "reprehenderit est deserunt velit ipsam",
-        "url": "https://via.placeholder.com/600/771796",
-        "thumbnailUrl": "https://via.placeholder.com/150/771796"
-    };
-    setInterval(()=> sendEncryptedMessage(roomId,mess).then(r => {console.log(r)}).catch(er =>{console.log(er)}), 10000);
-
-    messageListenerEncrypted(message => {
-        console.log("Received message: ", message);
-    }, roomId);
-});
