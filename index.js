@@ -70,8 +70,17 @@ async function runClient(filePath, credentials={}) {
             userId: userId,
             deviceId: deviceId,
             store: memoryStore,
-            cryptoStore: cryptoStore
+            cryptoStore: cryptoStore,
+            cryptoInfo: {
+                'ignore_unknown_devices': false
+            }
         });
+
+        client._cryptoConfig = {
+            ...client._cryptoConfig,
+            'trust': 'all'
+        };
+
         await client.initCrypto();
 
         client.on("RoomMember.membership", function (event, member) {
@@ -82,11 +91,9 @@ async function runClient(filePath, credentials={}) {
             }
         });
 
-
-        client.setGlobalBlacklistUnverifiedDevices(false);
-        client.setGlobalErrorOnUnknownDevices(false);
-
         if(client.isCryptoEnabled()){
+            client.getCrypto().globalBlacklistUnverifiedDevices = false;
+            client.getCrypto().globalErrorOnUnknownDevices = false;
             await client.startClient({ initialSyncLimit: 1 });
         }
 
@@ -108,6 +115,14 @@ async function runClient(filePath, credentials={}) {
                     };
                 },
             });
+
+        }
+
+        try {
+            await client.getCrypto().exportRoomKeys();
+            await client.sync();
+        } catch (err) {
+            console.error('Error uploading device keys and one-time keys:', err.message);
         }
     }catch (err) {
         throw new Error("Error while setting up client: ", err.message);
@@ -121,9 +136,10 @@ async function runClient(filePath, credentials={}) {
  */
 async function sendEncryptedMessage(roomId, message) {
     try {
-        if(!this.currentClientJoinedInRoom(roomId)){
+        if(!currentClientJoinedInRoom(roomId)){
             return { success: false, message: `Client is not member of the room ${roomId}`};
         }
+
         await client.setRoomEncryption(roomId, {
             algorithm: "m.megolm.v1.aes-sha2",
         });
@@ -173,10 +189,10 @@ function getMessage() {
 }
 
 /**
-* Waiting for encrypted message to come TODO not working 😢
-* @param roomId - The room ID where the encrypted message is expected
-* @return - Whenever an encrypted message comes, getMessage decrypts and returns it
-*/
+ * Waiting for encrypted message to come TODO not working 😢
+ * @param roomId - The room ID where the encrypted message is expected
+ * @return - Whenever an encrypted message comes, getMessage decrypts and returns it
+ */
 function getMessageEncrypted(roomId) {
     return new Promise(async (resolve, reject) => {
 
@@ -249,6 +265,19 @@ function messageListener(onMessageCallback, roomId) {
     });
 }
 
+function getAllMemberUserIds(roomId) {
+    const room = client.getRoom(roomId);
+
+    if (!room) {
+        throw new Error(`Room with ID ${roomId} not found.`);
+    }
+
+    const members = room.getJoinedMembers();
+    const userIds = members.map(member => member.userId);
+
+    return userIds;
+}
+
 /**
  * Message listener for messages that are end-to-end encrypted
  * @param onMessageCallback - gives decrypt message
@@ -259,6 +288,7 @@ function messageListenerEncrypted(onMessageCallback, roomId) {
     if(!currentClientJoinedInRoom(roomId)){
         throw new Error("Error while checking user's room join status");
     }
+
     client.setRoomEncryption(roomId, {
         algorithm: "m.megolm.v1.aes-sha2",
     }).then(()=>{
@@ -266,12 +296,15 @@ function messageListenerEncrypted(onMessageCallback, roomId) {
             if (event.getRoomId() !== roomId) {
                 return;
             }
-                if (event.getType() === "m.room.encrypted" && event.isDecryptionFailure()) {
-                    throw new Error("Failed to decrypt message");
-                } else if (event.getType() === "m.room.message") {
-                    const content = event.getContent();
-                    onMessageCallback(content.body);
-                }
+            if (event.getSender() === client.getUserId()) {
+                return;
+            }
+            if (event.getType() === "m.room.encrypted" && event.isDecryptionFailure()) {
+                throw new Error("Failed to decrypt message");
+            } else if (event.getType() === "m.room.message") {
+                const content = event.getContent();
+                onMessageCallback(content.body);
+            }
 
         });
     }).catch(er => {
@@ -314,7 +347,7 @@ async function getMyPowerLevel(roomId){
         await client.roomInitialSync(roomId, 10);
         const room = client.getRoom(roomId);
         const me = room.getMember(client.getUserId());
-       return me.powerLevel
+        return me.powerLevel
     }catch (error){
         throw new Error(error.message);
     }
@@ -389,3 +422,27 @@ module.exports = {
     getMessage, getJoinedRoomsID, messageListener, messageListenerEncrypted,
     getClient, setClient, getMyPowerLevel, currentClientJoinedInRoom
 }
+
+
+const loginCred = {
+    homeserverUrl: "https://matrix.org",
+    username: "radovantrtil3",
+    password: "PEFStudent2023"
+}
+
+runClient(null, loginCred).then(()=>{
+
+    const roomId = "!zXdOakElqNrvaviTIN:matrix.org";
+    const mess = {
+        "albumId": 1,
+        "id": 2,
+        "title": "reprehenderit est deserunt velit ipsam",
+        "url": "https://via.placeholder.com/600/771796",
+        "thumbnailUrl": "https://via.placeholder.com/150/771796"
+    };
+    setInterval(()=> sendEncryptedMessage(roomId,mess).then(r => {console.log(r)}).catch(er =>{console.log(er)}), 10000);
+
+    messageListenerEncrypted(message => {
+        console.log("Received message: ", message);
+    }, roomId);
+});

@@ -324,11 +324,12 @@ describe('messageListenerEncrypted', () => {
 
         sinon.assert.notCalled(onMessageCallback);
     });
-
-    it('should call the onMessageCallback when a new encrypted message is received for the specified room', async () => {
+    it('should call the onMessageCallback when a new decrypted message is received for the specified room', async () => {
         const event = {
             getRoomId: () => '!test:example.com',
+            getSender: () => 'other-user-id',
             getType: () => 'm.room.message',
+            isDecryptionFailure: () => false,
             getContent: () => ({ body: 'Test message' }),
         };
 
@@ -340,16 +341,22 @@ describe('messageListenerEncrypted', () => {
         sinon.assert.calledWith(onMessageCallback, 'Test message');
     });
 
-    it('should not call the onMessageCallback when a non-message event is received for the specified room', async () => {
+    it('should not call the onMessageCallback when a decryption failure occurs for the specified room', async () => {
         const event = {
             getRoomId: () => '!test:example.com',
-            getType: () => 'm.room.member',
+            getSender: () => 'other-user-id',
+            getType: () => 'm.room.encrypted',
+            isDecryptionFailure: () => true,
             getContent: () => ({ body: 'Test message' }),
         };
 
         await matrix.messageListenerEncrypted(onMessageCallback, '!test:example.com');
 
-        client.on.args[0][1](event);
+        try {
+            client.on.args[0][1](event);
+        } catch (error) {
+            assert.strictEqual(error.message, 'Failed to decrypt message');
+        }
 
         sinon.assert.notCalled(onMessageCallback);
     });
