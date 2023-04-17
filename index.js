@@ -93,6 +93,7 @@ async function runClient(credentials) {
     validateCredentials(data);
 
     await initializeOlm();
+
     await initClient(data);
     await client.initCrypto();
 
@@ -413,32 +414,6 @@ function setClient(newClient) {
 module.exports = {
     runClient, inviteUser, createRoom, sendEncryptedMessage, sendMessage,
     getMessage, getJoinedRoomsID, onMessage, onEncryptedMessage,
-    getClient, setClient, getMyPowerLevel, isCurrentClientJoinedInRoom
+    getClient, setClient, getMyPowerLevel, isCurrentClientJoinedInRoom, getAllMemberUserIds
 }
-
-const loginCred = {
-    homeserverUrl: "https://matrix.org",
-    username: "@radovantrtil6:matrix.org",
-    password: "PEFStudent2023"
-}
-const filePath = "./config.json";
-runClient(loginCred).then(()=>{
-
-    const roomId = "!qnjuOasOtHffOMyfpp:matrix.org";
-    const mess = {
-        "albumId": 1,
-        "id": 2,
-        "title": "reprehenderit est deserunt velit ipsam",
-        "url": "https://via.placeholder.com/600/771796",
-        "thumbnailUrl": "https://via.placeholder.com/150/771796"
-    };
-
-
-    sendEncryptedMessage(roomId, mess).then(r => {console.log(r)}).catch(er =>{console.log(er)});
-
-    onEncryptedMessage(roomId, message => {
-        console.log("Received message: ", message);
-    });
-
-});
 
