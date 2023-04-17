@@ -1,6 +1,6 @@
 {
-  "name": "bp_xtrtil",
-  "version": "1.2.3",
+  "name": "matrix-communication-helper",
+  "version": "1.2.4",
   "description": "Secure communication between services",
   "main": "index.js",
   "scripts": {
@@ -16,10 +16,10 @@
     "package",
     "secure",
     "communication",
-    "e2e encryption"
+    "e2ee"
   ],
   "author": "Radovan Trtil",
-  "license": "ISC",
+  "license": "MIT",
   "bugs": {
     "url": "https://github.com/radovantrtil/bp_xtrtil/issues"
   },

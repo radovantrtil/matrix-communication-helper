@@ -14,21 +14,12 @@ async function getCredentialsWithPassword(username, password, homeserver) {
             password
         );
         return {
-            success: true,
-            message: "User logged in successfully.",
             accessToken: credentials.access_token,
             userId: credentials.user_id,
-            deviceId: credentials.device_id,
+            deviceId: credentials.device_id
         };
     }catch (error){
-        return {
-            success: false,
-            message: `User login failed. ${error.message}`,
-            accessToken: null,
-            userId: null,
-            deviceId: null,
-
-        };
+       throw new Error("failed to login ", error);
     }
 }
 
@@ -70,16 +61,8 @@ async function runClient(filePath, credentials={}) {
             userId: userId,
             deviceId: deviceId,
             store: memoryStore,
-            cryptoStore: cryptoStore,
-            cryptoInfo: {
-                'ignore_unknown_devices': false
-            }
+            cryptoStore: cryptoStore
         });
-
-        client._cryptoConfig = {
-            ...client._cryptoConfig,
-            'trust': 'all'
-        };
 
         await client.initCrypto();
 
@@ -91,76 +74,57 @@ async function runClient(filePath, credentials={}) {
             }
         });
 
-        if(client.isCryptoEnabled()){
+
+        await client.startClient({ initialSyncLimit: 10 });
+
+        if(client.getCrypto()){
             client.getCrypto().globalBlacklistUnverifiedDevices = false;
             client.getCrypto().globalErrorOnUnknownDevices = false;
-            await client.startClient({ initialSyncLimit: 1 });
+
         }
 
         if (!client.getCrossSigningId()) {
-            await client.bootstrapCrossSigning({
-                authUploadDeviceSigningKeys: async function () {
-                    const response = await client.login("m.login.password", {
-                        identifier: {
-                            type: "m.id.user",
-                            user: data.username,
-                        },
-                        password: data.password,
-                    });
-
-                    return {
-                        user_id: client.getUserId(),
-                        device_id: client.getDeviceId(),
-                        access_token: response.access_token,
-                    };
-                },
-            });
-
+            await client.bootstrapCrossSigning();
         }
 
-        try {
-            await client.getCrypto().exportRoomKeys();
-            await client.sync();
-        } catch (err) {
-            console.error('Error uploading device keys and one-time keys:', err.message);
-        }
+
     }catch (err) {
         throw new Error("Error while setting up client: ", err.message);
     }
 }
 /**
  * Method to send encrypted message to the room.
- * @param roomId - ID of the room, where message is sent
- * @param message - message which will be encrypted and sent
+ * @param roomId - ID of the room, where message is sent, e.g. !qnjuOasOtHffOMyfpp:matrix.org
+ * @param message - send JSON like this e.q. {"albumId": 1, "id": 2, "title": "reprehenderit est deserunt velit ipsam"}
  * @returns {Promise<{success: boolean, message: string}>}
  */
 async function sendEncryptedMessage(roomId, message) {
     try {
-        if(!currentClientJoinedInRoom(roomId)){
-            return { success: false, message: `Client is not member of the room ${roomId}`};
+        if(!isCurrentClientJoinedInRoom(roomId)){
+            return; // { success: false, message: `Client is not member of the room ${roomId}`};
         }
 
-        await client.setRoomEncryption(roomId, {
-            algorithm: "m.megolm.v1.aes-sha2",
-        });
-
         await client.sendEvent(roomId, "m.room.message", {
-            "body": JSON.stringify(message),
-            "msgtype": "m.text"
-        });
+            body: JSON.stringify(message),
+            msgtype: "m.text"
+         });
         return { success: true, message: "Encrypted message sent successfully." };
     } catch (error) {
-        return { success: false, message: `Error sending encrypted message: ${error.message}` };
+        throw new Error(`Error sending encrypted message: ${error.message}`);
     }
 }
 
 /**
  * Method to send given message to the room. Message will NOT be encrypted.
- * @param roomId - ID of the room, where message is sent
- * @param message - message
+ * @param message - send JSON like this e.q. {"albumId": 1, "id": 2, "title": "reprehenderit est deserunt velit ipsam"}
+ * @param roomId - ID of the room, where message is sent, e.g. !qnjuOasOtHffOMyfpp:matrix.org
  */
 
 async function sendMessage(message, roomId) {
+     if(!isCurrentClientJoinedInRoom(roomId)){
+        throw new Error(`Client is not member of the room ${roomId}`);
+     }
+
     const content = {
         body: JSON.stringify(message),
         msgtype: "m.text",
@@ -171,17 +135,35 @@ async function sendMessage(message, roomId) {
 }
 /**
  * Waiting for NOT encrypted message to come
- * @return - whenever message comes, getMessage returns it
+ * @param roomId - e.g. !qnjuOasOtHffOMyfpp:matrix.org
+ * @return - whenever message comes, onMessage returns it
  */
-function getMessage() {
-    return new Promise((resolve) => {
+function onMessage(roomId) {
+    return new Promise((resolve, reject) => {
+
+        const isJoined =  isCurrentClientJoinedInRoom(roomId);
+        if (!isJoined) {
+            reject("Client is not a member of the room");
+            return;
+        }
+
         client.on("Room.timeline", function (event, room, toStartOfTimeline) {
+            if (event.getRoomId() !== roomId) {
+                return;
+            }
+
+            if (event.getSender() === client.getUserId()) {
+                return;
+            }
+
             if (toStartOfTimeline) {
                 return;
             }
+
             if (event.getType() !== "m.room.message") {
                 return;
             }
+
             const mess = event.getContent().body;
             resolve(mess);
         });
@@ -189,40 +171,40 @@ function getMessage() {
 }
 
 /**
- * Waiting for encrypted message to come TODO not working 😢
- * @param roomId - The room ID where the encrypted message is expected
- * @return - Whenever an encrypted message comes, getMessage decrypts and returns it
+ * Waiting for encrypted message to come TODO not working, bad message index 😢
+ * @param roomId - The room ID where the encrypted message is expected, e.g. !qnjuOasOtHffOMyfpp:matrix.org
+ * @return - Whenever an encrypted message comes, onMessage decrypts and returns it
  */
-function getMessageEncrypted(roomId) {
+function onMessageEncrypted(roomId) {
     return new Promise(async (resolve, reject) => {
 
-        const isJoined =  currentClientJoinedInRoom(roomId);
+        const isJoined =  isCurrentClientJoinedInRoom(roomId);
         if (!isJoined) {
             reject("Client is not a member of the room");
             return;
         }
 
-        await client.setRoomEncryption(roomId, {
-            algorithm: "m.megolm.v1.aes-sha2",
-        });
-
-        if(client.isRoomEncrypted(roomId)){
-            client.on("Event.decrypted", (event) => {
-                if (event.getRoomId() === roomId) {
-                    if (event.getType() === "m.room.encrypted" && event.isDecryptionFailure()) {
-                        reject("Failed to decrypt message: "+ event);
-                    } else if (event.getType() === "m.room.message") {
-                        const content = event.getContent().body;
-                        resolve(content);
-                    }
-                }
-            });
-            client.on("Event.decryption_failure", (event, err) => {
-                reject(err);
-            });
-        }else{
-            reject("Room is NOT encrypted "+ roomId);
+        if(!client.isRoomEncrypted(roomId)){
+            throw new Error(`room with ${roomId} has not enabled e2ee`);
         }
+
+        client.on("Event.decrypted", (event) => {
+            if (event.getRoomId() !== roomId) {
+                return;
+            }
+            if (event.getSender() === client.getUserId()) {
+                return;
+            }
+
+            if (event.getType() === "m.room.encrypted" && event.isDecryptionFailure()) {
+                reject("Failed to decrypt message: "+ event);
+            } else if (event.getType() === "m.room.message") {
+                const content = event.getContent().body;
+                resolve(content);
+            }else{
+                throw new Error("another error happened");
+            }
+        });
     });
 }
 
@@ -231,7 +213,7 @@ function getMessageEncrypted(roomId) {
  * @param roomId - id of room where should listener listen for events
  * @return boolean
  */
-function currentClientJoinedInRoom(roomId) {
+function isCurrentClientJoinedInRoom(roomId) {
     const room = client.getRoom(roomId);
     if (!room) {
         return false;
@@ -243,13 +225,12 @@ function currentClientJoinedInRoom(roomId) {
 /**
  * Message listener
  * @param onMessageCallback - gives received message
- * @param roomId - id of room where should listener listen for events
+ * @param roomId - id of room where should listener listen for events, e.g. !qnjuOasOtHffOMyfpp:matrix.org
  */
 function messageListener(onMessageCallback, roomId) {
-    if(!currentClientJoinedInRoom(roomId)){
+    if(!isCurrentClientJoinedInRoom(roomId)){
         throw new Error("Error while checking user's room join status");
     }
-
     client.on("Room.timeline", function (event, room, toStartOfTimeline) {
         if (event.getRoomId() !== roomId) {
             return;
@@ -265,6 +246,12 @@ function messageListener(onMessageCallback, roomId) {
     });
 }
 
+
+/**
+ * Get all room member's user ids
+ * @param roomId - id of room where should listener listen for encrypted events, e.g. !qnjuOasOtHffOMyfpp:matrix.org
+ * @returns userIds - all user ids that are in this room
+ */
 function getAllMemberUserIds(roomId) {
     const room = client.getRoom(roomId);
 
@@ -281,41 +268,39 @@ function getAllMemberUserIds(roomId) {
 /**
  * Message listener for messages that are end-to-end encrypted
  * @param onMessageCallback - gives decrypt message
- * @param roomId - id of room where should listener listen for encrypted events
+ * @param roomId - id of room where should listener listen for encrypted events, e.g. !qnjuOasOtHffOMyfpp:matrix.org
  */
-function messageListenerEncrypted(onMessageCallback, roomId) {
+function messageListenerEncrypted(roomId, onMessageCallback,) {
 
-    if(!currentClientJoinedInRoom(roomId)){
+    if(!isCurrentClientJoinedInRoom(roomId)){
         throw new Error("Error while checking user's room join status");
     }
 
-    client.setRoomEncryption(roomId, {
-        algorithm: "m.megolm.v1.aes-sha2",
-    }).then(()=>{
-        client.on("Event.decrypted", (event) => {
-            if (event.getRoomId() !== roomId) {
-                return;
-            }
-            if (event.getSender() === client.getUserId()) {
-                return;
-            }
-            if (event.getType() === "m.room.encrypted" && event.isDecryptionFailure()) {
-                throw new Error("Failed to decrypt message");
-            } else if (event.getType() === "m.room.message") {
-                const content = event.getContent();
-                onMessageCallback(content.body);
-            }
-
-        });
-    }).catch(er => {
-        throw new Error("Error while listening for encrypted messages: ", er);
+    if(!client.isRoomEncrypted(roomId)){
+        throw new Error(`room with ${roomId} has not enabled e2ee`);
+    }
+    client.on("Event.decrypted", (event) => {
+        if (event.getRoomId() !== roomId) {
+             return;
+        }
+        if (event.getSender() === client.getUserId()) {
+            return;
+        }
+        if (event.getType() === "m.room.encrypted" && event.isDecryptionFailure()) {
+            throw new Error("Failed to decrypt message");
+        } else if (event.getType() === "m.room.message") {
+            const content = event.getContent();
+            onMessageCallback(content.body);
+        }else{
+            throw new Error("another error happened");
+        }
     });
 }
 
 /**
- *  First check if client has permission to invite other users. If client has permission than user is invited to the room.
- * @param roomId - ID of room
- * @param userId - ID of user, who will be invited
+ *  First check if client has permission to invite other users. If client has permission then user is invited to the room.
+ * @param roomId - ID of room, e.g. !qnjuOasOtHffOMyfpp:matrix.org
+ * @param userId - ID of user, who will be invited, e.g. @radovantrtil6:matrix.org
  * @returns {Promise<{success: boolean, message: string}>}
  * */
 async function inviteUser(roomId, userId){
@@ -327,18 +312,17 @@ async function inviteUser(roomId, userId){
         if (invitePowerLevel > myPowerLevel) {
             return { success: false, message: "You don't have permission to invite users" };
         }
-
         await client.invite(roomId, userId);
         return { success: true, message: "User invited successfully." };
     } catch (error) {
-        return { success: false, message: `User invitation failed. ${error.message}`};
+        throw new Error(`User invitation failed. ${error.message}`);
     }
 }
 
 
 /**
  * Method to check for permission level. Default values are 0, 50 and 100. (0 is default user, 50 is moderator, 100 is owner)
- * @param roomId - ID of the room to check the power level
+ * @param roomId - ID of the room to check the power level, e.g. !qnjuOasOtHffOMyfpp:matrix.org
  * @return number of power level in room
  */
 
@@ -367,14 +351,12 @@ async function createRoom(roomName){
             initial_state: [
                 {
                     type: "m.room.guest_access",
-                    state_key: "",
                     content: {
                         guest_access: "can_join"
                     }
                 },
                 {
                     type: "m.room.encryption",
-                    state_key: "",
                     content: {
                         algorithm: "m.megolm.v1.aes-sha2"
                     }
@@ -383,7 +365,7 @@ async function createRoom(roomName){
         });
         return { success: true, message: "Room created successfully.", room_id: response.room_id, };
     } catch (error) {
-        return { success: false, message: `Room creation failed. ${error.message} `, room_id: null };
+        throw new Error(`Room creation failed. ${error.message}`);
     }
 }
 
@@ -419,6 +401,8 @@ function setClient(newClient) {
 
 module.exports = {
     runClient, inviteUser, createRoom, sendEncryptedMessage, sendMessage,
-    getMessage, getJoinedRoomsID, messageListener, messageListenerEncrypted,
-    getClient, setClient, getMyPowerLevel, currentClientJoinedInRoom
+    onMessage, getJoinedRoomsID, messageListener, messageListenerEncrypted,
+    getClient, setClient, getMyPowerLevel, isCurrentClientJoinedInRoom
 }
+
+

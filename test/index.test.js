@@ -134,7 +134,7 @@ describe('sendMessage', () => {
     });
 });
 
-describe('getMessage', () => {
+describe('onMessage', () => {
     let client;
     let onCallback;
 
@@ -151,7 +151,7 @@ describe('getMessage', () => {
     });
 
     it('should return a message when a new message is received', async () => {
-        const messagePromise = matrix.getMessage();
+        const messagePromise = matrix.onMessage();
 
         const event = {
             getType: () => 'm.room.message',
@@ -209,7 +209,7 @@ describe('messageListener', () => {
 
         client = matrix.getClient();
         onMessageCallback = sinon.stub();
-        sinon.stub(matrix, 'currentClientJoinedInRoom').returns(true);
+        sinon.stub(matrix, 'isCurrentClientJoinedInRoom').returns(true);
     });
 
     it('should call the onMessageCallback when a new message is received for the correct room', () => {
@@ -295,7 +295,7 @@ describe('messageListenerEncrypted', () => {
 
         client = matrix.getClient();
         onMessageCallback = sinon.stub();
-        sinon.stub(matrix, 'currentClientJoinedInRoom').returns(true);
+        sinon.stub(matrix, 'isCurrentClientJoinedInRoom').returns(true);
     });
 
     it('should call setRoomEncryption and on with correct arguments', async () => {
@@ -390,7 +390,7 @@ describe('runClient', () => {
 });
 
 
-describe('currentClientJoinedInRoom', () => {
+describe('isCurrentClientJoinedInRoom', () => {
     let client;
     beforeEach(() => {
        client = matrix.getClient();
@@ -411,7 +411,7 @@ describe('currentClientJoinedInRoom', () => {
 
         matrix.setClient(mockClient);
 
-        const result = matrix.currentClientJoinedInRoom('!room1:matrix.org');
+        const result = matrix.isCurrentClientJoinedInRoom('!room1:matrix.org');
         assert.strictEqual(result, true);
     });
 
@@ -423,7 +423,7 @@ describe('currentClientJoinedInRoom', () => {
 
         matrix.setClient(mockClient);
 
-        const result = matrix.currentClientJoinedInRoom('!room1:matrix.org');
+        const result = matrix.isCurrentClientJoinedInRoom('!room1:matrix.org');
         assert.strictEqual(result, false);
     });
 });
