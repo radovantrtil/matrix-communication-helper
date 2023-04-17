@@ -23,75 +23,86 @@ async function getCredentialsWithPassword(username, password, homeserver) {
     }
 }
 
-/**
- * This method runs matrix client. Use object or file to give this method credentials.
- * @param filePath - path to file that contains the user's login credentials (username, password, and homeserverUrl)
- * @param credentials - object with the user's login credentials (username, password and homeserverUrl)
- */
-async function runClient(filePath, credentials={}) {
-    if (!filePath && !credentials) {
-        throw new Error('Error: must provide either a file path or a object with username, password and homeserverUrl');
-    }
+async function initializeOlm() {
+    await olm.init({ locateFile: () => "node_modules/@matrix-org/olm/olm.wasm" });
+}
 
-    await olm.init({locateFile: () => "node_modules/@matrix-org/olm/olm.wasm"});
+async function initClient(credentials) {
+    const { accessToken, userId, deviceId } = await getCredentialsWithPassword(credentials.username, credentials.password, credentials.homeserverUrl);
 
-    let data;
-    let fileData;
-    if (filePath) {
-        const fileContent = fs.readFileSync(filePath, 'utf8');
-        fileData = JSON.parse(fileContent);
-    }
+    client = sdk.createClient({
+        baseUrl: credentials.homeserverUrl,
+        accessToken: accessToken,
+        userId: userId,
+        deviceId: deviceId,
+        store: memoryStore,
+        cryptoStore: cryptoStore
+    });
+}
 
-    const fileProperties = fileData ? ['homeserverUrl', 'username', 'password'] : [];
-    const objectProperties = ['homeserverUrl', 'username', 'password'];
-    const properties = [...fileProperties, ...objectProperties];
-    const missingProperties = properties.filter(prop => !fileData?.[prop] && !credentials?.[prop]);
+function validateCredentials(data) {
+    const requiredProperties = ['homeserverUrl', 'username', 'password'];
+    const missingProperties = requiredProperties.filter(prop => !data?.[prop]);
 
     if (missingProperties.length > 0) {
         throw new Error(`Error: missing properties, needed properties: ${missingProperties.join(', ')}`);
     }
+}
 
-    data = credentials && (!fileData || missingProperties.some(prop => credentials.hasOwnProperty(prop))) ? credentials : fileData;
-
-    try {
-        const { accessToken, userId, deviceId } = await getCredentialsWithPassword(data.username,data.password, data.homeserverUrl);
-        client = sdk.createClient({
-            baseUrl: data.homeserverUrl,
-            accessToken: accessToken,
-            userId: userId,
-            deviceId: deviceId,
-            store: memoryStore,
-            cryptoStore: cryptoStore
-        });
-
-        await client.initCrypto();
-
-        client.on("RoomMember.membership", function (event, member) {
-            if (member.membership === "invite" && member.userId === client.getUserId()) {
-                client.joinRoom(member.roomId).then(function () {
-                    console.log("Auto-joined %s", member.roomId);
-                });
-            }
-        });
-
-
-        await client.startClient({ initialSyncLimit: 10 });
-
-        if(client.getCrypto()){
-            client.getCrypto().globalBlacklistUnverifiedDevices = false;
-            client.getCrypto().globalErrorOnUnknownDevices = false;
-
+function autoJoinRooms() {
+    client.on("RoomMember.membership", function (event, member) {
+        if (member.membership === "invite" && member.userId === client.getUserId()) {
+            client.joinRoom(member.roomId).then(function () {
+                console.log("Auto-joined %s", member.roomId);
+            });
         }
+    });
+}
 
-        if (!client.getCrossSigningId()) {
-            await client.bootstrapCrossSigning();
-        }
+async function configureCrypto() {
+    if (client.getCrypto()) {
+        client.getCrypto().globalBlacklistUnverifiedDevices = false;
+        client.getCrypto().globalErrorOnUnknownDevices = false;
+    }
 
-
-    }catch (err) {
-        throw new Error("Error while setting up client: ", err.message);
+    if (!client.getCrossSigningId()) {
+        await client.bootstrapCrossSigning();
     }
 }
+
+/**
+ * This method runs matrix client. Use object or file to give this method credentials.
+ * @param credentials - relative path to file (e.g. ./config.json) or object containing this ({"homeserverUrl": "https://matrix.org", "username": "yourUsername", "password": "yourPassword"})
+ */
+async function runClient(credentials) {
+    if (!credentials) {
+        throw new Error('Error: must provide either a file path or an object with username, password, and homeserverUrl');
+    }
+
+    let data;
+    if (typeof credentials === 'string') {
+        const fileContent = fs.readFileSync(credentials, 'utf8');
+        const fileData = JSON.parse(fileContent);
+        data = fileData;
+    } else if (typeof credentials === 'object') {
+        data = credentials;
+    } else {
+        throw new Error('Error: input must be either a file path or an object with username, password, and homeserverUrl');
+    }
+
+    validateCredentials(data);
+
+    await initializeOlm();
+    await initClient(data);
+    await client.initCrypto();
+
+    autoJoinRooms();
+
+    await client.startClient({ initialSyncLimit: 10 });
+
+    await configureCrypto();
+}
+
 /**
  * Method to send encrypted message to the room.
  * @param roomId - ID of the room, where message is sent, e.g. !qnjuOasOtHffOMyfpp:matrix.org
@@ -116,11 +127,11 @@ async function sendEncryptedMessage(roomId, message) {
 
 /**
  * Method to send given message to the room. Message will NOT be encrypted.
- * @param message - send JSON like this e.q. {"albumId": 1, "id": 2, "title": "reprehenderit est deserunt velit ipsam"}
  * @param roomId - ID of the room, where message is sent, e.g. !qnjuOasOtHffOMyfpp:matrix.org
+ * @param message - send JSON like this e.q. {"albumId": 1, "id": 2, "title": "reprehenderit est deserunt velit ipsam"}
  */
 
-async function sendMessage(message, roomId) {
+async function sendMessage(roomId, message) {
      if(!isCurrentClientJoinedInRoom(roomId)){
         throw new Error(`Client is not member of the room ${roomId}`);
      }
@@ -136,9 +147,9 @@ async function sendMessage(message, roomId) {
 /**
  * Waiting for NOT encrypted message to come
  * @param roomId - e.g. !qnjuOasOtHffOMyfpp:matrix.org
- * @return - whenever message comes, onMessage returns it
+ * @return - whenever message comes, getMessage returns it
  */
-function onMessage(roomId) {
+function getMessage(roomId) {
     return new Promise((resolve, reject) => {
 
         const isJoined =  isCurrentClientJoinedInRoom(roomId);
@@ -173,9 +184,9 @@ function onMessage(roomId) {
 /**
  * Waiting for encrypted message to come TODO not working, bad message index 😢
  * @param roomId - The room ID where the encrypted message is expected, e.g. !qnjuOasOtHffOMyfpp:matrix.org
- * @return - Whenever an encrypted message comes, onMessage decrypts and returns it
+ * @return - Whenever an encrypted message comes, getMessage decrypts and returns it
  */
-function onMessageEncrypted(roomId) {
+function getMessageEncrypted(roomId) {
     return new Promise(async (resolve, reject) => {
 
         const isJoined =  isCurrentClientJoinedInRoom(roomId);
@@ -227,7 +238,7 @@ function isCurrentClientJoinedInRoom(roomId) {
  * @param onMessageCallback - gives received message
  * @param roomId - id of room where should listener listen for events, e.g. !qnjuOasOtHffOMyfpp:matrix.org
  */
-function messageListener(onMessageCallback, roomId) {
+function onMessage(roomId, onMessageCallback) {
     if(!isCurrentClientJoinedInRoom(roomId)){
         throw new Error("Error while checking user's room join status");
     }
@@ -270,7 +281,7 @@ function getAllMemberUserIds(roomId) {
  * @param onMessageCallback - gives decrypt message
  * @param roomId - id of room where should listener listen for encrypted events, e.g. !qnjuOasOtHffOMyfpp:matrix.org
  */
-function messageListenerEncrypted(roomId, onMessageCallback,) {
+function onEncryptedMessage(roomId, onMessageCallback,) {
 
     if(!isCurrentClientJoinedInRoom(roomId)){
         throw new Error("Error while checking user's room join status");
@@ -401,8 +412,33 @@ function setClient(newClient) {
 
 module.exports = {
     runClient, inviteUser, createRoom, sendEncryptedMessage, sendMessage,
-    onMessage, getJoinedRoomsID, messageListener, messageListenerEncrypted,
+    getMessage, getJoinedRoomsID, onMessage, onEncryptedMessage,
     getClient, setClient, getMyPowerLevel, isCurrentClientJoinedInRoom
 }
 
+const loginCred = {
+    homeserverUrl: "https://matrix.org",
+    username: "@radovantrtil6:matrix.org",
+    password: "PEFStudent2023"
+}
+const filePath = "./config.json";
+runClient(loginCred).then(()=>{
+
+    const roomId = "!qnjuOasOtHffOMyfpp:matrix.org";
+    const mess = {
+        "albumId": 1,
+        "id": 2,
+        "title": "reprehenderit est deserunt velit ipsam",
+        "url": "https://via.placeholder.com/600/771796",
+        "thumbnailUrl": "https://via.placeholder.com/150/771796"
+    };
+
+
+    sendEncryptedMessage(roomId, mess).then(r => {console.log(r)}).catch(er =>{console.log(er)});
+
+    onEncryptedMessage(roomId, message => {
+        console.log("Received message: ", message);
+    });
+
+});
 

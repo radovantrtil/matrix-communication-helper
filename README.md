@@ -80,7 +80,7 @@ bp_xtrtil.sendEncryptedMessage(roomId, mess)
 });
 
 // Listen for encrypted messages
-bp_xtrtil.messageListenerEncrypted(
+bp_xtrtil.onEncryptedMessage(
     (message) => {console.log("Received message:", message);}, roomId
 );
 ```
