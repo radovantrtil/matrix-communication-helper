@@ -431,35 +431,3 @@ module.exports = {
 }
 
 
-
-const loginCred = {
-    homeserverUrl: "https://matrix.org",
-    username: "radovantrtil3",
-    password: "PEFStudent2023"
-}
-
-runClient(loginCred).then(()=>{
-    const roomId = "!zXdOakElqNrvaviTIN:matrix.org";
-    const mess = {
-        "albumId": 1,
-        "id": 2,
-        "title": "reprehenderit est deserunt velit ipsam",
-        "url": "https://via.placeholder.com/600/771796",
-        "thumbnailUrl": "https://via.placeholder.com/150/771796"
-    };
-    onEncryptedMessage(roomId, message => {
-        console.log("Received message: ", message);
-    });
-
-
-    // getMessage(roomId).then(r=>console.log(r)).catch( er => console.log(er));
-    // setTimeout(() => {
-    //     onEncryptedMessage(roomId, message => {
-    //         console.log("Received message: ", message);
-    //     })
-    // }, 1000);
-    // getMessageEncrypted(roomId).then(r => {
-    //     console.log('HEJ', r);
-    // }).catch(er => console.log(er));
-});
-
