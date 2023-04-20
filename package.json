@@ -14,9 +14,12 @@
     "matrix",
     "npm",
     "package",
-    "secure",
+    "secure communication",
     "communication",
-    "e2ee"
+    "e2ee",
+    "matrix-js-sdk",
+    "nodejs",
+    "matrix-communication"
   ],
   "author": "Radovan Trtil",
   "license": "MIT",

@@ -3,6 +3,14 @@ const olm = require("@matrix-org/olm");
 const fs = require('fs');
 global.Olm = olm;
 
+// Check if it is in web or backend app
+// if(window){
+//     window.Olm = olm;
+// }else{
+//     global.olm = olm;
+// }
+
+
 let client;
 let memoryStore = new sdk.MemoryStore();
 let cryptoStore = new sdk.MemoryCryptoStore();
@@ -70,6 +78,18 @@ async function configureCrypto() {
     }
 }
 
+function waitForPreparedState() {
+    return new Promise((resolve) => {
+        client.once("sync", function (state, prevState, res) {
+            if (state === "PREPARED") {
+                resolve();
+            } else {
+                process.exit(1);
+            }
+        });
+    });
+}
+
 /**
  * This method runs matrix client. Use object or file to give this method credentials.
  * @param credentials - relative path to file (e.g. ./config.json) or object containing this ({"homeserverUrl": "https://matrix.org", "username": "yourUsername", "password": "yourPassword"})
@@ -95,6 +115,7 @@ async function runClient(credentials) {
     await initializeOlm();
 
     await initClient(data);
+
     await client.initCrypto();
 
     autoJoinRooms();
@@ -102,6 +123,8 @@ async function runClient(credentials) {
     await client.startClient({ initialSyncLimit: 10 });
 
     await configureCrypto();
+
+    await waitForPreparedState();
 }
 
 /**
@@ -115,7 +138,6 @@ async function sendEncryptedMessage(roomId, message) {
         if(!isCurrentClientJoinedInRoom(roomId)){
             return; // { success: false, message: `Client is not member of the room ${roomId}`};
         }
-
         await client.sendEvent(roomId, "m.room.message", {
             body: JSON.stringify(message),
             msgtype: "m.text"
@@ -189,17 +211,14 @@ function getMessage(roomId) {
  */
 function getMessageEncrypted(roomId) {
     return new Promise(async (resolve, reject) => {
-
-        const isJoined =  isCurrentClientJoinedInRoom(roomId);
+       const isJoined =  isCurrentClientJoinedInRoom(roomId);
         if (!isJoined) {
             reject("Client is not a member of the room");
             return;
         }
-
         if(!client.isRoomEncrypted(roomId)){
             throw new Error(`room with ${roomId} has not enabled e2ee`);
         }
-
         client.on("Event.decrypted", (event) => {
             if (event.getRoomId() !== roomId) {
                 return;
@@ -207,14 +226,14 @@ function getMessageEncrypted(roomId) {
             if (event.getSender() === client.getUserId()) {
                 return;
             }
-
             if (event.getType() === "m.room.encrypted" && event.isDecryptionFailure()) {
                 reject("Failed to decrypt message: "+ event);
             } else if (event.getType() === "m.room.message") {
-                const content = event.getContent().body;
+                console.log(event.getContent());
+                let content = event.getContent().body;
                 resolve(content);
             }else{
-                throw new Error("another error happened");
+                reject("another error happened");
             }
         });
     });
@@ -248,7 +267,7 @@ function onMessage(roomId, onMessageCallback) {
             return;
         }
         if (toStartOfTimeline) {
-            return; // don't print paginated results
+            return;
         }
         if (event.getType() !== "m.room.message") {
             return; // only print messages
@@ -282,7 +301,7 @@ function getAllMemberUserIds(roomId) {
  * @param onMessageCallback - gives decrypt message
  * @param roomId - id of room where should listener listen for encrypted events, e.g. !qnjuOasOtHffOMyfpp:matrix.org
  */
-function onEncryptedMessage(roomId, onMessageCallback,) {
+function onEncryptedMessage(roomId, onMessageCallback) {
 
     if(!isCurrentClientJoinedInRoom(roomId)){
         throw new Error("Error while checking user's room join status");
@@ -322,10 +341,10 @@ async function inviteUser(roomId, userId){
         const invitePowerLevel = powerLevels.invite || 50; // Default value for invite permission is 50
 
         if (invitePowerLevel > myPowerLevel) {
-            return { success: false, message: "You don't have permission to invite users" };
+            throw "You don't have permission to invite users";
         }
         await client.invite(roomId, userId);
-        return { success: true, message: "User invited successfully." };
+        return { message: "User invited successfully." };
     } catch (error) {
         throw new Error(`User invitation failed. ${error.message}`);
     }
@@ -362,12 +381,6 @@ async function createRoom(roomName){
             visibility: "private",
             initial_state: [
                 {
-                    type: "m.room.guest_access",
-                    content: {
-                        guest_access: "can_join"
-                    }
-                },
-                {
                     type: "m.room.encryption",
                     content: {
                         algorithm: "m.megolm.v1.aes-sha2"
@@ -375,7 +388,7 @@ async function createRoom(roomName){
                 }
             ]
         });
-        return { success: true, message: "Room created successfully.", room_id: response.room_id, };
+        return { message: "Room created successfully.", room_id: response.room_id, };
     } catch (error) {
         throw new Error(`Room creation failed. ${error.message}`);
     }
@@ -416,4 +429,37 @@ module.exports = {
     getMessage, getJoinedRoomsID, onMessage, onEncryptedMessage,
     getClient, setClient, getMyPowerLevel, isCurrentClientJoinedInRoom, getAllMemberUserIds
 }
+
+
+
+const loginCred = {
+    homeserverUrl: "https://matrix.org",
+    username: "radovantrtil3",
+    password: "PEFStudent2023"
+}
+
+runClient(loginCred).then(()=>{
+    const roomId = "!zXdOakElqNrvaviTIN:matrix.org";
+    const mess = {
+        "albumId": 1,
+        "id": 2,
+        "title": "reprehenderit est deserunt velit ipsam",
+        "url": "https://via.placeholder.com/600/771796",
+        "thumbnailUrl": "https://via.placeholder.com/150/771796"
+    };
+    onEncryptedMessage(roomId, message => {
+        console.log("Received message: ", message);
+    });
+
+
+    // getMessage(roomId).then(r=>console.log(r)).catch( er => console.log(er));
+    // setTimeout(() => {
+    //     onEncryptedMessage(roomId, message => {
+    //         console.log("Received message: ", message);
+    //     })
+    // }, 1000);
+    // getMessageEncrypted(roomId).then(r => {
+    //     console.log('HEJ', r);
+    // }).catch(er => console.log(er));
+});
 
