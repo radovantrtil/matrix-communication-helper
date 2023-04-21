@@ -27,7 +27,6 @@ npm install matrix-communication-helper
 - `sendMessage(roomId, message)` Sends a plain text message to a room.
 - `onMessage(roomId, onMessageCallback)` Sets up a message listener for plain text messages in a room.
 - `onEncryptedMessage(roomId, onMessageCallback)` Sets up a message listener for encrypted messages in a room.
-- `getMessage(roomId)` Waits for a plain text message to arrive in a room. 
 - `getJoinedRoomsID()` Retrieves an array of room IDs that the client has joined.
 - `getAllMemberUserIds(roomId)` Retrieves an array of room member's user ids.
 - `getMyPowerLevel(roomId)` Retrieves the power level of the client in a room. 

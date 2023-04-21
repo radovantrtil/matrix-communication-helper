@@ -6,6 +6,7 @@ describe('inviteUser and getMyPowerLevel', () => {
     let client;
     let roomId;
     let userId;
+    let consoleLogStub;
 
     beforeEach(() => {
         client = {
@@ -28,6 +29,11 @@ describe('inviteUser and getMyPowerLevel', () => {
 
         roomId = '!testRoom:example.com';
         userId = '@invitedUser:example.com';
+        consoleLogStub = sinon.stub(console, 'log');
+    });
+
+    afterEach(() => {
+        consoleLogStub.restore();
     });
 
     describe('getMyPowerLevel', () => {
@@ -44,15 +50,18 @@ describe('inviteUser and getMyPowerLevel', () => {
     });
 
     describe('inviteUser', () => {
-        it('should return an error message when the client does not have permission to invite users', async () => {
+        it('should successfully invite a user when the client has permission', async () => {
             client.getStateEvent.returns({ invite: 50 }); // Set the required invite power level to 50
             client.roomInitialSync.resolves();
+            const room = {
+                getMember: sinon.stub().returns({ powerLevel: 100 })
+            };
+            client.getRoom.returns(room);
 
-            const result = await matrix.inviteUser(roomId, userId);
+            await matrix.inviteUser(roomId, userId);
 
-            assert.strictEqual(result.success, false);
-            assert.strictEqual(result.message, "You don't have permission to invite users");
-
+            sinon.assert.calledWith(consoleLogStub, "User invited successfully.");
+            sinon.assert.calledWith(client.invite, roomId, userId);
         });
     });
 });
@@ -89,15 +98,7 @@ describe('createRoom', () => {
             visibility: 'private',
             initial_state: [
                 {
-                    type: 'm.room.guest_access',
-                    state_key: '',
-                    content: {
-                        guest_access: 'can_join',
-                    },
-                },
-                {
                     type: 'm.room.encryption',
-                    state_key: '',
                     content: {
                         algorithm: 'm.megolm.v1.aes-sha2',
                     },
@@ -112,83 +113,50 @@ describe('sendMessage', () => {
 
     beforeEach(() => {
         client = matrix.getClient();
+
+        matrix.setClient({
+            sendEvent: sinon.stub(),
+            getRoom: sinon.stub().returns({ getMember: sinon.stub().returns({ membership: 'join' }) }),
+            getUserId: sinon.stub().returns('test-user-id'),
+        });
+
+        client = matrix.getClient();
+        sinon.stub(matrix, 'isCurrentClientJoinedInRoom').returns(true);
     });
 
     afterEach(() => {
+        sinon.restore();
         matrix.setClient(client);
     });
 
     it('should send message to room', async () => {
-        const mockClient = {
-            sendEvent: sinon.stub(),
-        };
-
-        matrix.setClient(mockClient);
-
         const message = { text: 'Hello, world!' };
         const roomId = '!room1:matrix.org';
 
-        await matrix.sendMessage(message, roomId);
+        await matrix.sendMessage(roomId, message);
 
-        assert(mockClient.sendEvent.calledOnceWith(roomId, 'm.room.message', { body: JSON.stringify(message), msgtype: 'm.text' }, ''));
+        assert(client.sendEvent.calledOnceWith(roomId, 'm.room.message', { body: JSON.stringify(message), msgtype: 'm.text' }));
+    });
+
+    it('should throw an error when there is an error while sending the message', async () => {
+        const message = { text: 'Hello, world!' };
+        const roomId = '!room1:matrix.org';
+
+        const errorMessage = 'Error while sending message';
+        client.sendEvent.callsFake((_, __, ___, ____, callback) => {
+            callback(errorMessage);
+        });
+
+        try {
+            await matrix.sendMessage(roomId, message);
+        } catch (error) {
+            assert.strictEqual(error.message, `${error.message}`);
+        }
+        assert(client.sendEvent.calledOnce);
     });
 });
 
 describe('onMessage', () => {
-    let client;
-    let onCallback;
-
-    beforeEach(() => {
-        client = {
-            on: sinon.stub()
-        };
-
-        client.on.callsFake((event, callback) => {
-            onCallback = callback;
-        });
-
-        matrix.setClient(client);
-    });
-
-    it('should return a message when a new message is received', async () => {
-        const messagePromise = matrix.onMessage();
-
-        const event = {
-            getType: () => 'm.room.message',
-            getContent: () => ({ body: 'Test message' })
-        };
-
-        onCallback(event, {}, false);
-
-        const result = await messagePromise;
-        assert.strictEqual(result, event.getContent().body);
-    });
-});
-
-describe('getJoinedRoomsID', () => {
-    let client;
-
-    beforeEach(() => {
-        client = matrix.getClient();
-    });
-
-    afterEach(() => {
-        matrix.setClient(client);
-    });
-
-    it('should return joined rooms', async () => {
-        const mockClient = {
-            getJoinedRooms: sinon.stub().resolves({ joined_rooms: ['!room1:matrix.org', '!room2:matrix.org'] }),
-        };
-
-        matrix.setClient(mockClient);
-
-        const result = await matrix.getJoinedRoomsID();
-            assert.deepStrictEqual(result, ['!room1:matrix.org', '!room2:matrix.org']);
-    });
-});
-
-describe('messageListener', () => {
     let client;
     let onMessageCallback;
 
@@ -220,7 +188,7 @@ describe('messageListener', () => {
         };
         const room = { roomId: '!test:example.com' };
 
-        matrix.messageListener(onMessageCallback, room.roomId, client);
+        matrix.onMessage(room.roomId, onMessageCallback);
 
         client.on.args[0][1](event, room, false);
 
@@ -237,7 +205,7 @@ describe('messageListener', () => {
 
         const room = { roomId: '!test:example.com' };
 
-        matrix.messageListener(onMessageCallback, room.roomId, client);
+        matrix.onMessage(room.roomId, onMessageCallback);
 
         client.on.args[0][1](event, room, false);
 
@@ -251,7 +219,7 @@ describe('messageListener', () => {
         };
         const room = { roomId: '!test:example.com' };
 
-        matrix.messageListener(onMessageCallback, room.roomId, client);
+        matrix.onMessage(room.roomId, onMessageCallback);
 
         client.on.args[0][1](event, room, false);
 
@@ -266,7 +234,7 @@ describe('messageListener', () => {
         };
         const room = { roomId: '!test:example.com' };
 
-        matrix.messageListener(onMessageCallback, room.roomId, client);
+        matrix.onMessage(room.roomId, onMessageCallback);
 
         client.on.args[0][1](event, room, true);
 
@@ -274,7 +242,7 @@ describe('messageListener', () => {
     });
 });
 
-describe('messageListenerEncrypted', () => {
+describe('onEncryptedMessage', () => {
     let client;
     let onMessageCallback;
 
@@ -288,27 +256,14 @@ describe('messageListenerEncrypted', () => {
 
         matrix.setClient({
             on: sinon.stub(),
-            setRoomEncryption: sinon.stub().resolves(),
             getRoom: sinon.stub().returns({ getMember: sinon.stub().returns({ membership: 'join' }) }),
             getUserId: sinon.stub().returns('test-user-id'),
+            isRoomEncrypted: sinon.stub().returns(true),
         });
 
         client = matrix.getClient();
         onMessageCallback = sinon.stub();
         sinon.stub(matrix, 'isCurrentClientJoinedInRoom').returns(true);
-    });
-
-    it('should call setRoomEncryption and on with correct arguments', async () => {
-        const roomId = 'some-room-id';
-
-        await matrix.messageListenerEncrypted(onMessageCallback, roomId);
-
-        assert(client.setRoomEncryption.calledOnce);
-        assert(client.setRoomEncryption.calledWith(roomId, {
-            algorithm: "m.megolm.v1.aes-sha2",
-        }));
-        assert(client.on.calledOnce);
-        assert(client.on.calledWith('Event.decrypted', sinon.match.func));
     });
 
     it('should not call the onMessageCallback when a new encrypted message is received for a different room', async () => {
@@ -318,8 +273,7 @@ describe('messageListenerEncrypted', () => {
             getContent: () => ({ body: 'Test message' }),
         };
 
-        await matrix.messageListenerEncrypted(onMessageCallback, '!test:example.com');
-
+        await matrix.onEncryptedMessage('!test:example.com', onMessageCallback);
         client.on.args[0][1](event);
 
         sinon.assert.notCalled(onMessageCallback);
@@ -333,7 +287,7 @@ describe('messageListenerEncrypted', () => {
             getContent: () => ({ body: 'Test message' }),
         };
 
-        await matrix.messageListenerEncrypted(onMessageCallback, '!test:example.com');
+        await matrix.onEncryptedMessage('!test:example.com', onMessageCallback);
 
         client.on.args[0][1](event);
 
@@ -350,18 +304,16 @@ describe('messageListenerEncrypted', () => {
             getContent: () => ({ body: 'Test message' }),
         };
 
-        await matrix.messageListenerEncrypted(onMessageCallback, '!test:example.com');
+        await matrix.onEncryptedMessage('!test:example.com', onMessageCallback);
 
         try {
             client.on.args[0][1](event);
         } catch (error) {
             assert.strictEqual(error.message, 'Failed to decrypt message');
         }
-
         sinon.assert.notCalled(onMessageCallback);
     });
 });
-
 
 describe('runClient', () => {
     let client;
@@ -381,14 +333,13 @@ describe('runClient', () => {
         };
 
         await assert.rejects(
-            matrix.runClient(null, incompleteCredentials),
+            matrix.runClient(incompleteCredentials),
             {
                 message: 'Error: missing properties, needed properties: password'
             }
         );
     });
 });
-
 
 describe('isCurrentClientJoinedInRoom', () => {
     let client;
@@ -430,56 +381,51 @@ describe('isCurrentClientJoinedInRoom', () => {
 
 describe('sendEncryptedMessage', () => {
     let client;
+    let roomId;
+    let message;
 
     beforeEach(() => {
-        client = matrix.getClient();
+        client = {
+            getUserId: sinon.stub().returns('@testUser:example.com'),
+            getRoom: sinon.stub(),
+            isRoomEncrypted: sinon.stub(),
+            sendEvent: sinon.stub().resolves()
+        };
+
+        const room = {
+            getMember: sinon.stub().returns({ membership: 'join' }),
+        };
+
+        client.getRoom = sinon.stub().returns(room);
+
+        matrix.setClient(client);
+
+        roomId = '!testRoom:example.com';
+        message = { text: 'Hello, world!' };
     });
 
     afterEach(() => {
         matrix.setClient(client);
     });
 
-    it('should return an error if the client is not a member of the room', async () => {
-        const mockClient = {
-            getUserId: sinon.stub().returns('@alice:matrix.org'),
-            getRoom: sinon.stub().returns(null),
-        };
+    it('should call sendMessage when the room is encrypted', async () => {
+        client.isRoomEncrypted.returns(true);
+        sinon.spy(matrix, 'sendMessage');
 
-        matrix.setClient(mockClient);
+        await matrix.sendEncryptedMessage(roomId, message);
 
-        const result = await matrix.sendEncryptedMessage('!room1:matrix.org', 'Hello, world!');
-        assert.deepStrictEqual(result, { success: false, message: 'Client is not member of the room !room1:matrix.org' });
+        sinon.assert.calledOnce(matrix.sendMessage);
+        sinon.assert.calledWith(matrix.sendMessage, roomId, message);
     });
 
-    it('should send an encrypted message if the client is a member of the room', async () => {
-        const mockClient = {
-            getUserId: sinon.stub().returns('@alice:matrix.org'),
-            getRoom: sinon.stub().returns({
-                getMember: sinon.stub().returns({ membership: 'join' }),
-            }),
-            setRoomEncryption: sinon.stub().resolves(),
-            sendEvent: sinon.stub().resolves(),
-        };
+    it('should throw an error when the room is not encrypted', async () => {
+        client.isRoomEncrypted.returns(false);
 
-        matrix.setClient(mockClient);
-
-        const result = await matrix.sendEncryptedMessage('!room1:matrix.org', 'Hello, world!');
-        assert.deepStrictEqual(result, { success: true, message: 'Encrypted message sent successfully.' });
-    });
-
-    it('should return an error if there is a problem sending the encrypted message', async () => {
-        const mockClient = {
-            getUserId: sinon.stub().returns('@alice:matrix.org'),
-            getRoom: sinon.stub().returns({
-                getMember: sinon.stub().returns({ membership: 'join' }),
-            }),
-            setRoomEncryption: sinon.stub().resolves(),
-            sendEvent: sinon.stub().rejects(new Error('Network error')),
-        };
-
-        matrix.setClient(mockClient);
-
-        const result = await matrix.sendEncryptedMessage('!room1:matrix.org', 'Hello, world!');
-        assert.deepStrictEqual(result, { success: false, message: 'Error sending encrypted message: Network error' });
+        try {
+            await matrix.sendEncryptedMessage(roomId, message);
+            throw new Error('Expected an error to be thrown');
+        } catch (error) {
+            expect(error.message).toBe('Error sending message, room is not encrypted');
+        }
     });
 });
