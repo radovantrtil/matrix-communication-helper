@@ -389,7 +389,7 @@ describe('sendEncryptedMessage', () => {
             getUserId: sinon.stub().returns('@testUser:example.com'),
             getRoom: sinon.stub(),
             isRoomEncrypted: sinon.stub(),
-            sendEvent: sinon.stub().resolves()
+            sendEvent: sinon.stub().resolves(),
         };
 
         const room = {
@@ -410,12 +410,12 @@ describe('sendEncryptedMessage', () => {
 
     it('should call sendMessage when the room is encrypted', async () => {
         client.isRoomEncrypted.returns(true);
-        sinon.spy(matrix, 'sendMessage');
+        sinon.spy(matrix, 'sendEncryptedMessage');
 
         await matrix.sendEncryptedMessage(roomId, message);
 
-        sinon.assert.calledOnce(matrix.sendMessage);
-        sinon.assert.calledWith(matrix.sendMessage, roomId, message);
+        sinon.assert.calledOnce(matrix.sendEncryptedMessage);
+        sinon.assert.calledWith(matrix.sendEncryptedMessage, roomId, message);
     });
 
     it('should throw an error when the room is not encrypted', async () => {
@@ -423,9 +423,110 @@ describe('sendEncryptedMessage', () => {
 
         try {
             await matrix.sendEncryptedMessage(roomId, message);
-            throw new Error('Expected an error to be thrown');
         } catch (error) {
-            expect(error.message).toBe('Error sending message, room is not encrypted');
+            assert.strictEqual(error.message, 'Error sending message, room is not encrypted');
         }
     });
 });
+
+describe('getAllMemberUserIds', () => {
+    let client;
+    let roomId;
+
+    beforeEach(() => {
+        client = {
+            getRoom: sinon.stub(),
+        };
+
+        const room = {
+            getJoinedMembers: sinon.stub().returns([
+                { userId: '@user1:example.com' },
+                { userId: '@user2:example.com' },
+                { userId: '@user3:example.com' },
+            ]),
+        };
+
+        client.getRoom = sinon.stub().returns(room);
+
+        matrix.setClient(client);
+
+        roomId = '!testRoom:example.com';
+    });
+
+    afterEach(() => {
+        matrix.setClient(client);
+    });
+
+    it('should return all member user ids in the room', () => {
+        const expectedUserIds = [
+            '@user1:example.com',
+            '@user2:example.com',
+            '@user3:example.com',
+        ];
+
+        const userIds = matrix.getAllMemberUserIds(roomId);
+
+        assert.deepStrictEqual(userIds, expectedUserIds);
+    });
+
+    it('should throw an error when the room is not found', () => {
+        client.getRoom = sinon.stub().returns(null);
+
+        try {
+            matrix.getAllMemberUserIds(roomId);
+            throw new Error('Expected an error to be thrown');
+        } catch (error) {
+            assert.strictEqual(
+                error.message,
+                `Room with ID ${roomId} not found.`
+            );
+        }
+    });
+});
+
+describe('getJoinedRoomsID', () => {
+    let client;
+
+    beforeEach(() => {
+        client = {
+            getJoinedRooms: sinon.stub(),
+        };
+
+        matrix.setClient(client);
+    });
+
+    afterEach(() => {
+        matrix.setClient(client);
+    });
+
+    it('should return an array of joined room ids', async () => {
+        const expectedJoinedRooms = [
+            '!room1:example.com',
+            '!room2:example.com',
+            '!room3:example.com',
+        ];
+
+        client.getJoinedRooms.resolves({ joined_rooms: expectedJoinedRooms });
+
+        const joinedRooms = await matrix.getJoinedRoomsID();
+
+        assert.deepStrictEqual(joinedRooms, expectedJoinedRooms);
+    });
+
+    it('should throw an error when there is an issue getting joined rooms', async () => {
+        const errorMessage = 'Error while trying to get rooms ID: ';
+        client.getJoinedRooms.rejects(new Error('API error'));
+
+        try {
+            await matrix.getJoinedRoomsID();
+            throw new Error('Expected an error to be thrown');
+        } catch (error) {
+            assert.strictEqual(error.message, errorMessage);
+        }
+    });
+});
+
+
+
+
+

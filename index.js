@@ -15,6 +15,7 @@ let memoryStore = new sdk.MemoryStore();
 let cryptoStore = new sdk.MemoryCryptoStore();
 
 
+
 async function getCredentialsWithPassword(username, password, homeserver) {
     try{
         const credentials = await sdk.createClient({baseUrl: homeserver}).loginWithPassword(
