@@ -3,18 +3,18 @@ const olm = require("@matrix-org/olm");
 const fs = require('fs');
 global.Olm = olm;
 
-// Check if it is in web or backend app
-// if(window){
-//     window.Olm = olm;
-// }else{
-//     global.olm = olm;
-// }
+
+if (typeof window !== 'undefined') {
+    window.Olm = olm;
+} else if (typeof global !== 'undefined') {
+    global.olm = olm;
+} else {
+    throw new Error('Unsupported environment.');
+}
 
 let client;
 let memoryStore = new sdk.MemoryStore();
 let cryptoStore = new sdk.MemoryCryptoStore();
-
-
 
 async function getCredentialsWithPassword(username, password, homeserver) {
     try{
@@ -37,7 +37,8 @@ async function initializeOlm() {
 }
 
 async function initClient(credentials) {
-    const { accessToken, userId, deviceId } = await getCredentialsWithPassword(credentials.username, credentials.password, credentials.homeserverUrl);
+    const { accessToken, userId, deviceId } =
+        await getCredentialsWithPassword(credentials.username, credentials.password, credentials.homeserverUrl);
 
     client = sdk.createClient({
         baseUrl: credentials.homeserverUrl,
@@ -110,19 +111,12 @@ async function runClient(credentials) {
     }
 
     validateCredentials(data);
-
     await initializeOlm();
-
     await initClient(data);
-
     await client.initCrypto();
-
     autoJoinRooms();
-
     await client.startClient({ initialSyncLimit: 10 });
-
     await configureCrypto();
-
     await waitForPreparedState();
 }
 
@@ -189,7 +183,7 @@ function onMessage(roomId, onMessageCallback) {
             return;
         }
         if (event.getType() !== "m.room.message") {
-            return; // only print messages
+            return;
         }
         const message = event.getContent().body;
         onMessageCallback(message);
@@ -289,7 +283,7 @@ async function getMyPowerLevel(roomId){
 /**
  * Create own private, end-to-end encrypted room (algorithm m.megolm.v1.aes-sha2)
  * @param roomName - choose name for new room
- * @return {Promise<{ message: string, room_id: string }>}
+ * @return {Promise<{ room_id: string }>}
  */
 async function createRoom(roomName){
     try {
@@ -306,7 +300,7 @@ async function createRoom(roomName){
                 }
             ]
         });
-        return { message: "Room created successfully.", room_id: response.room_id, };
+        return {room_id: response.room_id};
     } catch (error) {
         throw new Error(`Room creation failed. ${error.message}`);
     }
@@ -315,7 +309,7 @@ async function createRoom(roomName){
 
 /**
  * Getting array of rooms ID, where client is joined
- * @return - return array of rooms ID
+ * @return {Promise< [joinedRooms] >} returns array of rooms ID
  */
 async function getJoinedRoomsID(){
     try{

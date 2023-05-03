@@ -100,10 +100,6 @@ m_helper.onEncryptedMessage( roomId, (message) => {
 );
 ```
 
-## Documentation
-
-For a detailed description of the available functions and their usage, refer to the package's source code comments.
-
 ## Contributing
 
 Contributions to the package are welcome. Feel free to open an issue or submit a pull request on the repository.

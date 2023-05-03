@@ -1,6 +1,6 @@
 {
   "name": "matrix-communication-helper",
-  "version": "1.2.6",
+  "version": "1.2.9",
   "description": "Secure communication between services",
   "main": "index.js",
   "scripts": {
@@ -8,7 +8,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/radovantrtil/bp_xtrtil"
+    "url": "git+https://github.com/radovantrtil/matrix-communication-helper"
   },
   "keywords": [
     "matrix",
@@ -24,12 +24,12 @@
   "author": "Radovan Trtil",
   "license": "MIT",
   "bugs": {
-    "url": "https://github.com/radovantrtil/bp_xtrtil/issues"
+    "url": "https://github.com/radovantrtil/matrix-communication-helper/issues"
   },
-  "homepage": "https://github.com/radovantrtil/bp_xtrtil#readme",
+  "homepage": "https://github.com/radovantrtil/matrix-communication-helper#readme",
   "dependencies": {
     "@matrix-org/olm": "https://gitlab.matrix.org/api/v4/projects/27/packages/npm/@matrix-org/olm/-/@matrix-org/olm-3.2.14.tgz",
-    "matrix-js-sdk": "24.1.0",
+    "matrix-js-sdk": "25.0.0",
     "mocha": "^10.2.0",
     "sinon": "^15.0.3"
   }
