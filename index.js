@@ -1,8 +1,6 @@
 const sdk = require("matrix-js-sdk");
 const olm = require("@matrix-org/olm");
 const fs = require('fs');
-global.Olm = olm;
-
 
 if (typeof window !== 'undefined') {
     window.Olm = olm;
