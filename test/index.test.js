@@ -1,6 +1,7 @@
-const assert = require('assert');
-const matrix = require('../index.js');
-const sinon = require('sinon');
+import assert from 'assert';
+import matrix from '../index.js';
+import sinon from 'sinon';
+
 
 describe('inviteUser and getMyPowerLevel', () => {
     let client;
@@ -44,14 +45,39 @@ describe('inviteUser and getMyPowerLevel', () => {
             client.getRoom.returns(room);
 
             const powerLevel = await matrix.getMyPowerLevel(roomId);
-
             assert.strictEqual(powerLevel, 50);
         });
+
+        it('should throw an error if getMember returns null', async () => {
+            const room = {
+                getMember: sinon.stub().returns(null)
+            };
+            client.getRoom.returns(room);
+
+            try {
+                await matrix.getMyPowerLevel(roomId);
+                assert.fail('Expected an error to be thrown');
+            } catch (error) {
+                assert.strictEqual(error.message, 'Cannot read properties of null (reading \'powerLevel\')');
+            }
+        });
+
+        it('should throw an error if getRoom returns null', async () => {
+            client.getRoom.returns(null);
+
+            try {
+                await matrix.getMyPowerLevel(roomId);
+                assert.fail('Expected an error to be thrown');
+            } catch (error) {
+                assert.strictEqual(error.message, 'Cannot read properties of null (reading \'getMember\')');
+            }
+        });
+
     });
 
     describe('inviteUser', () => {
         it('should successfully invite a user when the client has permission', async () => {
-            client.getStateEvent.returns({ invite: 50 }); // Set the required invite power level to 50
+            client.getStateEvent.returns({ invite: 50 });
             client.roomInitialSync.resolves();
             const room = {
                 getMember: sinon.stub().returns({ powerLevel: 100 })
@@ -62,6 +88,21 @@ describe('inviteUser and getMyPowerLevel', () => {
 
             sinon.assert.calledWith(consoleLogStub, "User invited successfully.");
             sinon.assert.calledWith(client.invite, roomId, userId);
+        });
+
+        it('should not invite a user when the client does not have permission', async () => {
+            client.getStateEvent.returns({ invite: 50 }); // Set the required invite power level to 50
+            client.roomInitialSync.resolves();
+            const room = {
+                getMember: sinon.stub().returns({ powerLevel: 0 })
+
+            };
+            client.getRoom.returns(room);
+
+            await matrix.inviteUser(roomId, userId);
+
+            sinon.assert.calledWith(consoleLogStub, "You don't have permission to invite users");
+            sinon.assert.notCalled(client.invite);
         });
     });
 });
@@ -105,6 +146,25 @@ describe('createRoom', () => {
                 },
             ],
         });
+    });
+
+    it('should throw an error if client.createRoom rejects', async () => {
+        const roomName = 'Test Room';
+
+        const createRoomStub = sinon.stub().rejects(new Error('Failed to create room'));
+
+        const mockClient = {
+            createRoom: createRoomStub,
+        };
+
+        matrix.setClient(mockClient);
+
+        try {
+            await matrix.createRoom(roomName);
+            assert.fail('Expected an error to be thrown');
+        } catch (error) {
+            assert.strictEqual(error.message, 'Room creation failed. Failed to create room');
+        }
     });
 });
 
@@ -190,7 +250,7 @@ describe('onMessage', () => {
 
         matrix.onMessage(room.roomId, onMessageCallback);
 
-        client.on.args[0][1](event, room, false);
+        client.on.firstCall.callArgWith(1, event, room, false);
 
         sinon.assert.calledOnce(onMessageCallback);
         sinon.assert.calledWithExactly(onMessageCallback, event.getContent().body);
@@ -207,7 +267,7 @@ describe('onMessage', () => {
 
         matrix.onMessage(room.roomId, onMessageCallback);
 
-        client.on.args[0][1](event, room, false);
+        client.on(event, room, false);
 
         sinon.assert.notCalled(onMessageCallback);
     });
@@ -221,7 +281,7 @@ describe('onMessage', () => {
 
         matrix.onMessage(room.roomId, onMessageCallback);
 
-        client.on.args[0][1](event, room, false);
+        client.on(event, room, false);
 
         sinon.assert.notCalled(onMessageCallback);
     });
@@ -236,7 +296,7 @@ describe('onMessage', () => {
 
         matrix.onMessage(room.roomId, onMessageCallback);
 
-        client.on.args[0][1](event, room, true);
+        client.on(event, room, true);
 
         sinon.assert.notCalled(onMessageCallback);
     });
@@ -274,7 +334,7 @@ describe('onEncryptedMessage', () => {
         };
 
         await matrix.onEncryptedMessage('!test:example.com', onMessageCallback);
-        client.on.args[0][1](event);
+        client.on(event);
 
         sinon.assert.notCalled(onMessageCallback);
     });
@@ -289,7 +349,7 @@ describe('onEncryptedMessage', () => {
 
         await matrix.onEncryptedMessage('!test:example.com', onMessageCallback);
 
-        client.on.args[0][1](event);
+        client.on.firstCall.callArgWith(1, event);
 
         sinon.assert.calledOnce(onMessageCallback);
         sinon.assert.calledWith(onMessageCallback, 'Test message');
@@ -307,7 +367,7 @@ describe('onEncryptedMessage', () => {
         await matrix.onEncryptedMessage('!test:example.com', onMessageCallback);
 
         try {
-            client.on.args[0][1](event);
+            client.on(event);
         } catch (error) {
             assert.strictEqual(error.message, 'Failed to decrypt message');
         }
@@ -316,14 +376,28 @@ describe('onEncryptedMessage', () => {
 });
 
 describe('runClient', () => {
+    let originalClient;
     let client;
 
     beforeEach(() => {
-        client = matrix.getClient();
+        originalClient = matrix.getClient();
+        client = { ...originalClient, startClient: sinon.stub() };
+        matrix.setClient(client);
     });
 
     afterEach(() => {
-        matrix.setClient(client);
+        matrix.setClient(originalClient);
+    });
+
+    it('should successfully start the client with valid credentials', async () => {
+        const validCredentials = {
+            homeserverUrl: 'https://matrix.org',
+            username: 'testUser',
+            password: 'testPassword'
+        };
+
+        await matrix.runClient(validCredentials);
+        assert(client.startClient.calledOnce, 'startClient should have been called once');
     });
 
     it('should throw an error if required properties are missing from the credentials object', async () => {

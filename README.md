@@ -44,7 +44,7 @@ const m_helper = require("matrix-communication-helper");
 2. Provide the user's login credentials (homeserver URL, username and password as object):
 
 ```javascript
-const loginCred = {
+const credentials = {
     homeserverUrl: "https://matrix.org",
     username: "your-username",
     password: "your-password",

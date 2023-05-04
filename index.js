@@ -1,11 +1,10 @@
-const sdk = require("matrix-js-sdk");
-const olm = require("@matrix-org/olm");
-const fs = require('fs');
+import olm from "@matrix-org/olm"
+import sdk from "matrix-js-sdk"
 
 if (typeof window !== 'undefined') {
     window.Olm = olm;
 } else if (typeof global !== 'undefined') {
-    global.olm = olm;
+    global.Olm = olm;
 } else {
     throw new Error('Unsupported environment.');
 }
@@ -31,7 +30,7 @@ async function getCredentialsWithPassword(username, password, homeserver) {
 }
 
 async function initializeOlm() {
-    await olm.init({ locateFile: () => "node_modules/@matrix-org/olm/olm.wasm" });
+    await olm.init();
 }
 
 async function initClient(credentials) {
@@ -98,7 +97,8 @@ async function runClient(credentials) {
     }
 
     let data;
-    if (typeof credentials === 'string') {
+    if (typeof credentials === 'string' && typeof window === 'undefined') {
+        const fs = require('fs');
         const fileContent = fs.readFileSync(credentials, 'utf8');
         const fileData = JSON.parse(fileContent);
         data = fileData;
@@ -107,15 +107,15 @@ async function runClient(credentials) {
     } else {
         throw new Error('Error: input must be either a file path or an object with username, password, and homeserverUrl');
     }
-
     validateCredentials(data);
     await initializeOlm();
     await initClient(data);
+    const waitForPreparedStatePromise = waitForPreparedState();
     await client.initCrypto();
     autoJoinRooms();
     await client.startClient({ initialSyncLimit: 10 });
     await configureCrypto();
-    await waitForPreparedState();
+    await waitForPreparedStatePromise;
 }
 
 /**
@@ -144,7 +144,7 @@ async function sendMessage(roomId, message) {
             body: JSON.stringify(message),
             msgtype: "m.text",
         };
-        client.sendEvent(roomId, "m.room.message", content);
+        await client.sendEvent(roomId, "m.room.message", content);
     }catch(error){
         throw new Error(`Error sending message: ${error.message}`)
     }
@@ -196,14 +196,11 @@ function onMessage(roomId, onMessageCallback) {
  */
 function getAllMemberUserIds(roomId) {
     const room = client.getRoom(roomId);
-
     if (!room) {
         throw new Error(`Room with ID ${roomId} not found.`);
     }
-
     const members = room.getJoinedMembers();
     const userIds = members.map(member => member.userId);
-
     return userIds;
 }
 
@@ -247,7 +244,7 @@ function onEncryptedMessage(roomId, onMessageCallback) {
 async function inviteUser(roomId, userId){
     try {
         const powerLevels = await client.getStateEvent(roomId, "m.room.power_levels", "");
-        const myPowerLevel = getMyPowerLevel(roomId);
+        const myPowerLevel = await getMyPowerLevel(roomId);
         const invitePowerLevel = powerLevels.invite || 50; // Default value for invite permission is 50
 
         if (invitePowerLevel > myPowerLevel) {
@@ -260,7 +257,6 @@ async function inviteUser(roomId, userId){
         throw new Error(`User invitation failed. ${error}`);
     }
 }
-
 
 /**
  * Method to check for permission level. Default values are 0, 50 and 100. (0 is default user, 50 is moderator, 100 is owner)
@@ -334,10 +330,8 @@ function setClient(newClient) {
     client = newClient;
 }
 
-module.exports = {
+export default  {
     runClient, inviteUser, createRoom, sendEncryptedMessage, sendMessage,
     getJoinedRoomsID, onMessage, onEncryptedMessage, getClient, setClient,
     getMyPowerLevel, isCurrentClientJoinedInRoom, getAllMemberUserIds
 }
-
-
