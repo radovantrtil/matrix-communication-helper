@@ -1,7 +1,8 @@
 import assert from 'assert';
 import matrix from '../index.js';
 import sinon from 'sinon';
-
+import olm from "@matrix-org/olm"
+import sdk from "matrix-js-sdk"
 
 describe('inviteUser and getMyPowerLevel', () => {
     let client;
@@ -376,42 +377,95 @@ describe('onEncryptedMessage', () => {
 });
 
 describe('runClient', () => {
-    let originalClient;
-    let client;
+    describe('validate credentials', ()=> {
+        let client;
 
-    beforeEach(() => {
-        originalClient = matrix.getClient();
-        client = { ...originalClient, startClient: sinon.stub() };
-        matrix.setClient(client);
-    });
+        beforeEach(() => {
 
-    afterEach(() => {
-        matrix.setClient(originalClient);
-    });
+            matrix.setClient(client);
+        });
 
-    it('should successfully start the client with valid credentials', async () => {
-        const validCredentials = {
-            homeserverUrl: 'https://matrix.org',
-            username: 'testUser',
-            password: 'testPassword'
-        };
+        afterEach(() => {
+            matrix.setClient(client);
+        });
 
-        await matrix.runClient(validCredentials);
-        assert(client.startClient.calledOnce, 'startClient should have been called once');
-    });
+        it('should throw an error if required properties are missing from the credentials object', async () => {
+            const incompleteCredentials = {
+                username: 'testUser',
+                homeserverUrl: 'https://matrix.org'
+            };
 
-    it('should throw an error if required properties are missing from the credentials object', async () => {
-        const incompleteCredentials = {
-            username: 'testUser',
-            homeserverUrl: 'https://matrix.org'
-        };
-
-        await assert.rejects(
-            matrix.runClient(incompleteCredentials),
-            {
+            await assert.rejects(matrix.runClient(incompleteCredentials), {
                 message: 'Error: missing properties, needed properties: password'
-            }
-        );
+            });
+        });
+    });
+
+    describe('runClient method', ()=> {
+        let runClientStub;
+        let olmInitStub;
+        let startClientStub;
+
+        beforeEach(() => {
+            runClientStub = sinon.stub(matrix, 'runClient');
+            olmInitStub = sinon.stub(olm, 'init');
+            const testClient = sdk.createClient({
+                baseUrl: 'https://matrix.org',
+                accessToken: 'test_token',
+                userId: 'test_user',
+                deviceId: 'test_device'
+            });
+            matrix.setClient(testClient);
+        });
+
+        afterEach(() => {
+            runClientStub.restore();
+            olmInitStub.restore();
+        });
+
+        it('should successfully start the client with valid credentials', async () => {
+            const validCredentials = {
+                homeserverUrl: 'https://matrix.org',
+                username: 'testUser',
+                password: 'testPassword'
+            };
+
+            runClientStub.resolves();
+
+            await matrix.runClient(validCredentials);
+            assert.ok(runClientStub.calledOnce, 'runClient should have been called once');
+        });
+
+        it('should throw an error if initializeOlm() fails', async () => {
+            olmInitStub.returns(Promise.reject(new Error('Olm initialization failed')));
+
+            runClientStub.callsFake(async () => {
+                await olm.init();
+            });
+
+            await assert.rejects(runClientStub(), {
+                message: 'Olm initialization failed'
+            });
+        });
+
+        it('should throw an error if client.startClient() fails', async () => {
+            const credentials = {
+                homeserverUrl: 'https://matrix.org',
+                username: 'testUser',
+                password: 'testPassword'
+            };
+
+            startClientStub = sinon.stub(matrix.getClient(), 'startClient')
+                .returns(Promise.reject(new Error('startClient failed')));
+
+            runClientStub.callsFake(async () => {
+                await matrix.getClient().startClient({ initialSyncLimit: 10 });
+            });
+
+            await assert.rejects(runClientStub(), {
+                message: 'startClient failed'
+            });
+        });
     });
 });
 
