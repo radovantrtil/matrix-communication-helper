@@ -1,5 +1,5 @@
-import olm from "@matrix-org/olm"
-import sdk from "matrix-js-sdk"
+import olm from "@matrix-org/olm";
+import sdk from "matrix-js-sdk";
 
 if (typeof window !== 'undefined') {
     window.Olm = olm;

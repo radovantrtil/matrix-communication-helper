@@ -8,8 +8,9 @@ create and manage rooms, and invite users to rooms.
 
 ## Requirements
 
-- Node.js version 18 or higher
-- A valid account on the desired homeserver
+- Node.js version 18 or higher.
+- A valid account on the desired homeserver, 
+where are NOT back up keys set up.
 
 ## Installation
 
@@ -18,6 +19,17 @@ To install the package, run the following command:
 ```
 npm install matrix-communication-helper
 ```
+
+## Web app - specific prerequisites
+In WebApp, after install package, you need to move `olm.wasm file`
+from `node_modules/@matrix-org/olm` and put it in `public folder`
+and in web app you need to `declare variable global` before using this package.
+
+``` html
+<script> var global = window; </script>
+``` 
+
+
 ## Exported methods
 
 - `runClient(credentials)` Initializes and starts the Matrix client with the given credentials.
@@ -38,8 +50,9 @@ npm install matrix-communication-helper
 1. Import the package:
 
 ```javascript
-const m_helper = require("matrix-communication-helper");
+import m_helper from "matrix-communication-helper";
 ```
+
 
 2. Provide the user's login credentials (homeserver URL, username and password as object):
 
@@ -50,7 +63,7 @@ const credentials = {
     password: "your-password",
 };
 ```
-   or in json file like this conf.json and add relative path to this file as parameter, e.g. "./config.json"  
+   or in Node app use json file like this conf.json and add relative path to this file as parameter, e.g. "./config.json"  
 ``` json
 {
     "homeserverUrl": "https://matrix.org",
