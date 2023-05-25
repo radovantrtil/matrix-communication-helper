@@ -1,10 +1,13 @@
 import olm from "@matrix-org/olm";
 import sdk from "matrix-js-sdk";
+import { Buffer } from 'buffer';
 
 if (typeof window !== 'undefined') {
     window.Olm = olm;
+    window.Buffer = Buffer;
 } else if (typeof global !== 'undefined') {
     global.Olm = olm;
+    global.Buffer = Buffer;
 } else {
     throw new Error('Unsupported environment.');
 }
