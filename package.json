@@ -1,6 +1,6 @@
 {
   "name": "matrix-communication-helper",
-  "version": "1.3.4",
+  "version": "1.3.6",
   "type": "module",
   "description": "Secure communication between services",
   "main": "index.js",
@@ -31,7 +31,7 @@
   "homepage": "https://github.com/radovantrtil/matrix-communication-helper#readme",
   "dependencies": {
     "@matrix-org/olm": "https://gitlab.matrix.org/api/v4/projects/27/packages/npm/@matrix-org/olm/-/@matrix-org/olm-3.2.14.tgz",
-    "matrix-js-sdk": "25.0.0",
+    "matrix-js-sdk": "25.1.1",
     "mocha": "^10.2.0",
     "sinon": "^15.0.3",
     "buffer": "^6.0.3"

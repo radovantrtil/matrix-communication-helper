@@ -332,7 +332,6 @@ function getClient() {
 function setClient(newClient) {
     client = newClient;
 }
-
 export default  {
     runClient, inviteUser, createRoom, sendEncryptedMessage, sendMessage,
     getJoinedRoomsID, onMessage, onEncryptedMessage, getClient, setClient,
