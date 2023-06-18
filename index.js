@@ -337,3 +337,9 @@ export default  {
     getJoinedRoomsID, onMessage, onEncryptedMessage, getClient, setClient,
     getMyPowerLevel, isCurrentClientJoinedInRoom, getAllMemberUserIds
 }
+
+const credentials = {
+    homeserverUrl: "https://matrix.org",
+    username: "radovantrtil3",
+    password: "PEFStudent2023"
+};
